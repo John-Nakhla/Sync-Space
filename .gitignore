@@ -1,0 +1,20 @@
+# --- System / IDE ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# --- Backend (Recursive) ---
+**/target/
+**/*.class
+**/mvnw
+**/mvnw.cmd
+.mvn/
+
+# --- Database Data ---
+# This prevents your local database files from being pushed
+**/postgres_data/
+
+# --- Frontend (Future) ---
+**/node_modules/
+**/build/
