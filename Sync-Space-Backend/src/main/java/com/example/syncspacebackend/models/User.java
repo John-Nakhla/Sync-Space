@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "users") // Good practice as "user" is a reserved keyword in Postgres
 @Data
+@Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @EntityListeners(AuditingEntityListener.class) // Required for @CreatedDate
@@ -20,7 +21,7 @@ public class User {
     private Long id; // Using Long is standard for database IDs
 
     @Column(nullable = false, unique = true)
-    private String userName;
+    private String username;
 
     @Column(nullable = false, unique = true)
     private String email;
