@@ -1,5 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 
+import MainLayout from "./layouts/MainLayout";
+
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -11,20 +13,19 @@ import Room from "./pages/Room";
 function App() {
   return (
     <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
+      <Route path="/" element={<MainLayout />}>
+        
+        {/* Nested Routes */}
+        <Route index element={<Home />} />
+        <Route path="login" element={<Login />} />
+        <Route path="signup" element={<Signup />} />
+        <Route path="create-room" element={<CreateRoom />} />
+        <Route path="join-room" element={<JoinRoom />} />
+        <Route path="my-rooms" element={<MyRooms />} />
+        <Route path="room/:roomId" element={<Room />} />
 
-      {/* Room Routes */}
-      <Route path="/create-room" element={<CreateRoom />} />
-      <Route path="/join-room" element={<JoinRoom />} />
-      <Route path="/my-rooms" element={<MyRooms />} />
+      </Route>
 
-      {/* Dynamic Room Page */}
-      <Route path="/room/:roomId" element={<Room />} />
-
-      {/* 404 Fallback */}
       <Route path="*" element={<h1>404 Not Found</h1>} />
     </Routes>
   );
