@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 
 import MainLayout from "./layouts/MainLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -14,15 +15,19 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<MainLayout />}>
-        
-        {/* Nested Routes */}
+
+        {/* Public Routes */}
         <Route index element={<Home />} />
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />
-        <Route path="create-room" element={<CreateRoom />} />
-        <Route path="join-room" element={<JoinRoom />} />
-        <Route path="my-rooms" element={<MyRooms />} />
-        <Route path="room/:roomId" element={<Room />} />
+
+        {/* Protected Routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="create-room" element={<CreateRoom />} />
+          <Route path="join-room" element={<JoinRoom />} />
+          <Route path="my-rooms" element={<MyRooms />} />
+          <Route path="room/:roomId" element={<Room />} />
+        </Route>
 
       </Route>
 
