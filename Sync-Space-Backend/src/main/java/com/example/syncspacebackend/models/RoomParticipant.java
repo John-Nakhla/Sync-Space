@@ -27,9 +27,8 @@ public class RoomParticipant {
     @Column(nullable = false)
     private Role role;
 
-    // Simplified to match WhatsApp logic
     public enum Role {
-        ADMIN,  // Can add/remove members and change room settings
-        MEMBER  // Can chat and view content
+        ADMIN,
+        MEMBER
     }
 }
