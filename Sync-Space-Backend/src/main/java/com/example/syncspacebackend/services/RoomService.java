@@ -14,18 +14,21 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomParticipantRepository participantRepository;
+    private final UserRepository userRepository; // Added to find users by ID
 
     @Transactional
     public Room createRoom(String name, String description, User owner) {
         Room room = Room.builder()
                 .name(name)
-                .description(description) // NEW
+                .description(description)
                 .owner(owner)
-                .joinCode(generateJoinToken(null))
-                .status(Room.RoomStatus.ACTIVE) // NEW: Defaults to ACTIVE
+                .joinCode(generateJoinToken())
+                .status(Room.RoomStatus.ACTIVE)
+                .createdAt(LocalDateTime.now())
                 .build();
         Room savedRoom = roomRepository.save(room);
 
+        // The creator is ALWAYS the ADMIN
         RoomParticipant admin = RoomParticipant.builder()
                 .room(savedRoom)
                 .user(owner)
@@ -36,21 +39,55 @@ public class RoomService {
         return savedRoom;
     }
 
-    public String generateJoinToken(Long roomId) {
+    public String generateJoinToken() {
         return UUID.randomUUID().toString().substring(0, 8); 
     }
 
     @Transactional
-    public void joinRoom(Room room, User user) {
-        if (participantRepository.existsByRoomAndUser(room, user)) {
-            throw new RuntimeException("User already in room");
+    public String joinRoom(String joinCode, Long userId) {
+        // Find room by code (useful for URL/Terminal joins)
+        Room room = roomRepository.findByJoinCode(joinCode)
+                .orElseThrow(() -> new RuntimeException("Invalid Room Code!"));
+
+        // Find user by ID
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (room.getStatus() == Room.RoomStatus.ENDED) {
+            throw new RuntimeException("Cannot join an ended room");
         }
+
+        if (participantRepository.existsByRoomAndUser(room, user)) {
+            return "User already in room: " + room.getName();
+        }
+
+        // Others joining via code/URL are ALWAYS MEMBERs by default
         RoomParticipant member = RoomParticipant.builder()
                 .room(room)
                 .user(user)
                 .role(RoomParticipant.Role.MEMBER)
                 .build();
         participantRepository.save(member);
+        
+        return room.getName();
+    }
+
+    // NEW: Promotion Logic
+    @Transactional
+    public void promoteToContributor(Long roomId, Long targetUserId, User adminUser) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Room not found"));
+
+        // Security Check: Is the person promoting actually the owner?
+        if (!room.getOwner().getId().equals(adminUser.getId())) {
+            throw new RuntimeException("Only the owner can promote members");
+        }
+
+        RoomParticipant participant = participantRepository.findByRoomAndUserId(room, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Target user is not in this room"));
+
+        participant.setRole(RoomParticipant.Role.CONTRIBUTOR);
+        participantRepository.save(participant);
     }
 
     @Transactional
@@ -60,7 +97,6 @@ public class RoomService {
         participantRepository.delete(participant);
     }
 
-    // NEW: Method to pause/end a room
     @Transactional
     public Room endRoom(Long roomId, User user) {
         Room room = roomRepository.findById(roomId)
@@ -84,10 +120,9 @@ public class RoomService {
             throw new RuntimeException("Access denied: You are not a member of this room");
         }
 
-        // NEW: Reactivate the room if it was ended
         if (room.getStatus() == Room.RoomStatus.ENDED) {
             room.setStatus(Room.RoomStatus.ACTIVE);
-            room.setEndedAt(null); // Clear the end time since it's running again
+            room.setEndedAt(null);
             roomRepository.save(room);
         }
 

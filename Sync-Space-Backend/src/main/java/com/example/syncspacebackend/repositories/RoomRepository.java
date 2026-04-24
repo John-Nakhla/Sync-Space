@@ -6,9 +6,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+// This one is already good! No changes needed.
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long> {
-    
-    // NEW: Method to find a room by its join code
     Optional<Room> findByJoinCode(String joinCode);
 }

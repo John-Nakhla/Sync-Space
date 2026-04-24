@@ -29,6 +29,7 @@ public class RoomParticipant {
 
     public enum Role {
         ADMIN,
-        MEMBER
+        MEMBER,
+        CONTRIBUTOR
     }
 }

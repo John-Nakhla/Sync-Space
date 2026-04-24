@@ -21,7 +21,7 @@ public class RoomController {
     @PostMapping("/create")
     public ResponseEntity<Room> createRoom(
             @RequestParam String name, 
-            @RequestParam(required = false) String description, // NEW
+            @RequestParam(required = false) String description,
             @RequestParam Long ownerId) {
             
         User owner = userRepository.findById(ownerId)
@@ -31,34 +31,51 @@ public class RoomController {
         return ResponseEntity.ok(newRoom);
     }
 
+    // UPDATED: Now calls roomService.joinRoom with String code and Long userId
     @PostMapping("/join/{code}")
-    public ResponseEntity<String> joinRoomByCode(@PathVariable String code, @RequestParam Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-
-        Room room = roomRepository.findByJoinCode(code)
-                .orElseThrow(() -> new RuntimeException("Invalid Room Code!"));
-
-        roomService.joinRoom(room, user);
-        return ResponseEntity.ok("Successfully joined the room: " + room.getName());
+    public ResponseEntity<String> joinRoomByCode(
+            @PathVariable String code, 
+            @RequestParam Long userId) {
+        
+        String result = roomService.joinRoom(code, userId);
+        return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/{roomId}/resume")
-    public ResponseEntity<Room> resumeRoom(@PathVariable Long roomId, @RequestParam Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+    // NEW: The Promotion Endpoint
+    @PatchMapping("/{roomId}/promote/{userId}")
+    public ResponseEntity<String> promoteUser(
+            @PathVariable Long roomId, 
+            @PathVariable Long userId, 
+            @RequestParam Long adminId) {
+            
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new RuntimeException("Admin not found"));
+        
+        roomService.promoteToContributor(roomId, userId, admin);
+        return ResponseEntity.ok("User promoted to CONTRIBUTOR successfully!");
+    }
 
-        Room room = roomService.resumeRoom(roomId, user);
+    @PostMapping("/{roomId}/end")
+    public ResponseEntity<Room> endRoom(
+            @PathVariable Long roomId, 
+            @RequestParam Long userId) {
+        
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Room room = roomService.endRoom(roomId, user);
         return ResponseEntity.ok(room);
     }
 
-    // NEW ENDPOINT: End or Pause the room
-    @PostMapping("/{roomId}/end")
-    public ResponseEntity<Room> endRoom(@PathVariable Long roomId, @RequestParam Long userId) {
+    @GetMapping("/{roomId}/resume")
+    public ResponseEntity<Room> resumeRoom(
+            @PathVariable Long roomId, 
+            @RequestParam Long userId) {
+        
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Room room = roomService.endRoom(roomId, user);
+        Room room = roomService.resumeRoom(roomId, user);
         return ResponseEntity.ok(room);
     }
 }
