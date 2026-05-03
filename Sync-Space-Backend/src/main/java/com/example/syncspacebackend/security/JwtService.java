@@ -21,15 +21,23 @@ public class JwtService {
                 SECRET_KEY.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(UserDetails userDetails) {
-
+    public String generateToken(UserPrincipal userPrincipal) { // Change to UserPrincipal to access .getId()
         return Jwts.builder()
-                .setSubject(userDetails.getUsername()) // email
+                .setSubject(userPrincipal.getUsername()) // email
+                .claim("userId", userPrincipal.getId())   // 🟢 Add custom claim
                 .setIssuedAt(new Date())
-                .setExpiration(
-                        new Date(System.currentTimeMillis() + 1000 * 60 * 60))
+                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    public Long extractUserId(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody()
+                .get("userId", Long.class); // 🟢 Extract custom claim
     }
 
     public String extractUsername(String token) {

@@ -1,10 +1,8 @@
 package com.example.syncspacebackend.controllers;
 
+import com.example.syncspacebackend.models.RoomRequest;
 import com.example.syncspacebackend.models.Room;
-import com.example.syncspacebackend.models.User;
 import com.example.syncspacebackend.services.RoomService;
-import com.example.syncspacebackend.repositories.UserRepository;
-import com.example.syncspacebackend.repositories.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,67 +13,36 @@ import org.springframework.web.bind.annotation.*;
 public class RoomController {
 
     private final RoomService roomService;
-    private final UserRepository userRepository;
-    private final RoomRepository roomRepository;
 
     @PostMapping("/create")
-    public ResponseEntity<Room> createRoom(
-            @RequestParam String name, 
-            @RequestParam(required = false) String description,
-            @RequestParam Long ownerId) {
-            
-        User owner = userRepository.findById(ownerId)
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + ownerId));
-        
-        Room newRoom = roomService.createRoom(name, description, owner);
-        return ResponseEntity.ok(newRoom);
+    public ResponseEntity<Room> createRoom(@RequestBody RoomRequest request) {
+        // Data comes from Body; Identity comes from Token (inside Service)
+        return ResponseEntity.ok(roomService.createRoom(request.getName(), request.getDescription()));
     }
 
-    // UPDATED: Now calls roomService.joinRoom with String code and Long userId
     @PostMapping("/join/{code}")
-    public ResponseEntity<String> joinRoomByCode(
-            @PathVariable String code, 
-            @RequestParam Long userId) {
-        
-        String result = roomService.joinRoom(code, userId);
-        return ResponseEntity.ok(result);
+    public ResponseEntity<String> joinRoomByCode(@PathVariable String code) {
+        // No userId param needed!
+        return ResponseEntity.ok(roomService.joinRoom(code));
     }
 
-    // NEW: The Promotion Endpoint
     @PatchMapping("/{roomId}/promote/{userId}")
     public ResponseEntity<String> promoteUser(
-            @PathVariable Long roomId, 
-            @PathVariable Long userId, 
-            @RequestParam Long adminId) {
-            
-        User admin = userRepository.findById(adminId)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
-        
-        roomService.promoteToContributor(roomId, userId, admin);
+            @PathVariable Long roomId,
+            @PathVariable Long userId) {
+
+        // adminId is handled automatically in the service
+        roomService.promoteToContributor(roomId, userId);
         return ResponseEntity.ok("User promoted to CONTRIBUTOR successfully!");
     }
 
     @PostMapping("/{roomId}/end")
-    public ResponseEntity<Room> endRoom(
-            @PathVariable Long roomId, 
-            @RequestParam Long userId) {
-        
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        Room room = roomService.endRoom(roomId, user);
-        return ResponseEntity.ok(room);
+    public ResponseEntity<Room> endRoom(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.endRoom(roomId));
     }
 
     @GetMapping("/{roomId}/resume")
-    public ResponseEntity<Room> resumeRoom(
-            @PathVariable Long roomId, 
-            @RequestParam Long userId) {
-        
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        Room room = roomService.resumeRoom(roomId, user);
-        return ResponseEntity.ok(room);
+    public ResponseEntity<Room> resumeRoom(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.resumeRoom(roomId));
     }
 }
