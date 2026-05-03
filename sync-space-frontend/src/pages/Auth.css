@@ -1,0 +1,74 @@
+/* Auth.css */
+
+.auth-container {
+    display: flex;
+    align-items: center;
+    justify-content: center; 
+    gap: 100px; /* Adjust this to space the text and card naturally */
+    
+    width: 100%; /* Takes full width of the now-unconstrained #root */
+    height: calc(100vh - 60px); /* Adjust 60px to your navbar's height */
+    
+    background-color: #f3f4f9;
+    /* Use 'repeat' for the triangle pattern to fill the entire wide screen */
+    background-image: url('/path-to-your-pattern.png'); 
+    background-repeat: repeat;
+    
+    margin: 0;
+    padding: 0 50px; /* Small padding on the sides so it doesn't touch the edges */
+    box-sizing: border-box;
+}
+.auth-left h1 {
+    color: #6200ee;
+    font-size: 3.5rem; /* Slightly larger to fill the new screen space */
+    line-height: 1.2;
+    margin: 0;
+}
+
+.auth-card {
+    background: white;
+    padding: 40px;
+    border-radius: 25px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+    width: 450px; /* Slightly wider for a more balanced look on big screens */
+    text-align: center;
+}
+
+/* Ensure the accent text from your design stands out */
+.accent-text {
+    color: #00bcd4; 
+    display: block;
+    margin-top: 10px;
+}
+
+.auth-btn {
+    background: #6200ee;
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 20px;
+    width: 100%; /* Makes the button fill the card width for better UX */
+}
+
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #6b6375;
+    font-size: 0.9rem;
+}
+
+.input-group input {
+    border: 1px solid #d1c4e9;
+    border-radius: 8px;
+    padding: 12px;
+    width: 100%;
+    box-sizing: border-box; /* Crucial so padding doesn't break the width */
+}
