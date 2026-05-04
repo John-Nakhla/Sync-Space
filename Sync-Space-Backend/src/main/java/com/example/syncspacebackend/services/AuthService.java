@@ -7,6 +7,7 @@ import com.example.syncspacebackend.models.User;
 import com.example.syncspacebackend.repositories.UserRepository;
 import com.example.syncspacebackend.security.CustomUserDetailsService;
 import com.example.syncspacebackend.security.JwtService;
+import com.example.syncspacebackend.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -39,10 +40,10 @@ public class AuthService {
 
         userRepository.save(user);
 
-        UserDetails userDetails =
+        UserPrincipal userPrincipal = (UserPrincipal)
                 userDetailsService.loadUserByUsername(user.getEmail());
 
-        String token = jwtService.generateToken(userDetails);
+        String token = jwtService.generateToken(userPrincipal);
 
         return new AuthResponse(token);
     }
@@ -56,10 +57,10 @@ public class AuthService {
                 )
         );
 
-        UserDetails userDetails =
+        UserPrincipal userPrincipal = (UserPrincipal)
                 userDetailsService.loadUserByUsername(request.getEmail());
 
-        String token = jwtService.generateToken(userDetails);
+        String token = jwtService.generateToken(userPrincipal);
 
         return new AuthResponse(token);
     }

@@ -11,16 +11,17 @@ import lombok.*;
 @NoArgsConstructor
 public class RoomParticipant {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @EmbeddedId
+    private RoomParticipantId id;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
+    @MapsId("userId") // Maps to userId in RoomParticipantId
+    @JoinColumn(name = "user_id")
     private User user;
 
     @ManyToOne
-    @JoinColumn(name = "room_id", nullable = false)
+    @MapsId("roomId") // Maps to roomId in RoomParticipantId
+    @JoinColumn(name = "room_id")
     private Room room;
 
     @Enumerated(EnumType.STRING)
@@ -28,8 +29,6 @@ public class RoomParticipant {
     private Role role;
 
     public enum Role {
-        ADMIN,
-        MEMBER,
-        CONTRIBUTOR
+        ADMIN, MEMBER, CONTRIBUTOR
     }
 }
