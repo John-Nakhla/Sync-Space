@@ -6,10 +6,10 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import CreateRoom from "./pages/CreateRoom";
-import JoinRoom from "./pages/JoinRoom";
 import MyRooms from "./pages/MyRooms";
-import ChatRoom from "./pages/ChatRoom";
+
+// FIX 1: Import the Room component we just built instead of ChatRoom
+import Room from "./pages/Room"; 
 
 function App() {
   return (
@@ -24,10 +24,10 @@ function App() {
 
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
-          <Route path="create-room" element={<CreateRoom />} />
-          <Route path="join-room" element={<JoinRoom />} />
           <Route path="my-rooms" element={<MyRooms />} />
-          <Route path="/room/:roomId" element={<ChatRoom />} />
+          
+          {/* FIX 2: Render <Room /> here instead of <ChatRoom /> */}
+          <Route path="/room/:roomId" element={<Room />} />
         </Route>
 
       </Route>
