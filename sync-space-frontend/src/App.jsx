@@ -9,7 +9,7 @@ import Signup from "./pages/Signup";
 import CreateRoom from "./pages/CreateRoom";
 import JoinRoom from "./pages/JoinRoom";
 import MyRooms from "./pages/MyRooms";
-import Room from "./pages/Room";
+import ChatRoom from "./pages/ChatRoom";
 
 function App() {
   return (
@@ -20,13 +20,14 @@ function App() {
         <Route index element={<Home />} />
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />
+        
 
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
           <Route path="create-room" element={<CreateRoom />} />
           <Route path="join-room" element={<JoinRoom />} />
           <Route path="my-rooms" element={<MyRooms />} />
-          <Route path="room/:roomId" element={<Room />} />
+          <Route path="/room/:roomId" element={<ChatRoom />} />
         </Route>
 
       </Route>

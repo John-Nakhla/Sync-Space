@@ -1,0 +1,100 @@
+.rooms-page {
+    min-height: 100vh;
+    width: 100%; /* Ensure full width */
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    /* Updated background to ensure it covers everything */
+    background-color: #f0f2ff;
+    background-image: linear-gradient(30deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
+    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
+    linear-gradient(30deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
+    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
+    linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db),
+    linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db);
+    background-size: 80px 140px;
+}
+
+.rooms-container {
+    width: 100%;
+    /* Remove max-width to let it expand */
+    padding: 60px 40px; /* Add some padding so content isn't touching the screen edges */
+    box-sizing: border-box;
+}
+
+.rooms-grid {
+    display: grid;
+    /* This will now use all available space */
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 30px;
+    width: 100%;
+}
+
+.rooms-title {
+    color: #6a00ff;
+    font-size: 2.5rem;
+    margin-bottom: 30px;
+    font-weight: 500;
+}
+
+
+.room-card {
+    background: white;
+    border-radius: 25px; /* Matches the login card curvature */
+    padding: 30px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s;
+}
+
+.room-card:hover {
+    transform: translateY(-5px);
+}
+
+.room-info h2 {
+    color: #333;
+    margin: 0 0 10px 0;
+    font-size: 1.5rem;
+}
+
+.room-info p {
+    color: #666;
+    line-height: 1.5;
+}
+
+.room-footer {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.role-badge {
+    font-size: 0.8rem;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+/* Role specific colors */
+.role-badge.admin { background: #fee2e2; color: #ef4444; }
+.role-badge.member { background: #e0e7ff; color: #6a00ff; }
+.role-badge.contributor { background: #fef3c7; color: #d97706; }
+
+.enter-button {
+    background: #8B00FF; /* Matches your Sign In button */
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.enter-button:hover {
+    background: #7200d6;
+}
