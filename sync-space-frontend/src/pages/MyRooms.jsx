@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom'; // 1. Import useNavigate
 import './MyRooms.css';
 
 const MyRooms = () => {
     const [rooms, setRooms] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    
+    const navigate = useNavigate(); // 2. Initialize navigate
 
     useEffect(() => {
         const fetchRooms = async () => {
             try {
                 const token = localStorage.getItem('token');
-                
                 if (!token) {
                     setError("Please log in to view your rooms.");
                     setLoading(false);
@@ -19,25 +21,22 @@ const MyRooms = () => {
                 }
 
                 const response = await axios.get('http://localhost:8080/api/rooms/my-rooms', {
-                    headers: {
-                        // Crucial: Must match the "Bearer " format expected by your JwtFilter
-                        'Authorization': `Bearer ${token}` 
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
-                
                 setRooms(response.data);
             } catch (err) {
-                console.error("Error fetching rooms:", err);
-                setError(err.response?.status === 403 
-                    ? "Session expired or unauthorized. Please login again." 
-                    : "Failed to load rooms.");
+                setError("Failed to load rooms.");
             } finally {
                 setLoading(false);
             }
         };
-
         fetchRooms();
     }, []);
+
+    // 3. Create the navigation handler
+    const handleEnterRoom = (roomId) => {
+        navigate(`/chat/${roomId}`); // Matches the route pattern you'll set in App.js
+    };
 
     if (loading) return <div className="status-msg">Loading your spaces...</div>;
     if (error) return <div className="status-msg error">{error}</div>;
@@ -57,11 +56,16 @@ const MyRooms = () => {
                                 <span className={`role-badge ${room.role.toLowerCase()}`}>
                                     {room.role}
                                 </span>
-                                <button className="enter-button">Enter Room</button>
+                                {/* 4. Add the onClick event */}
+                                <button 
+                                    className="enter-button" 
+                                    onClick={() => handleEnterRoom(room.roomId)}
+                                >
+                                    Enter Room
+                                </button>
                             </div>
                         </div>
                     ))}
-                    {rooms.length === 0 && <p>You haven't joined any rooms yet.</p>}
                 </div>
             </div>
         </div>

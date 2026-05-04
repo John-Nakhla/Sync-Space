@@ -1,11 +1,6 @@
 .rooms-page {
     min-height: 100vh;
-    width: 100%; /* Ensure full width */
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    /* Updated background to ensure it covers everything */
+    /* Recreating the geometric pattern from your image */
     background-color: #f0f2ff;
     background-image: linear-gradient(30deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
     linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
@@ -14,21 +9,13 @@
     linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db),
     linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db);
     background-size: 80px 140px;
+    padding: 40px 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .rooms-container {
-    width: 100%;
-    /* Remove max-width to let it expand */
-    padding: 60px 40px; /* Add some padding so content isn't touching the screen edges */
-    box-sizing: border-box;
-}
-
-.rooms-grid {
-    display: grid;
-    /* This will now use all available space */
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 30px;
-    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
 }
 
 .rooms-title {

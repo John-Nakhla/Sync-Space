@@ -1,0 +1,90 @@
+/* Color Palette */
+:root {
+    --primary-purple: #8B00FF;
+    --action-orange: #FF9100;
+    --bg-light: #f8f9fa;
+}
+
+.chat-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-light);
+    /* Matching the geometric background in your screenshot */
+    background-image: radial-gradient(var(--primary-purple) 0.5px, transparent 0.5px);
+    background-size: 24px 24px;
+    opacity: 0.9;
+}
+
+.purple-text { color: var(--primary-purple); font-weight: 800; }
+
+.messages-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Chat Bubbles */
+.message-bubble {
+    padding: 12px 18px;
+    border-radius: 20px;
+    font-size: 0.95rem;
+    position: relative;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+.mine {
+    align-self: flex-end;
+    background: var(--primary-purple);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.theirs {
+    align-self: flex-start;
+    background: white;
+    color: #444;
+    border-bottom-left-radius: 4px;
+}
+
+.timestamp {
+    display: block;
+    font-size: 0.7rem;
+    margin-top: 5px;
+    opacity: 0.7;
+}
+
+/* Input Bar */
+.chat-bar {
+    background: white;
+    padding: 1.5rem 2rem;
+    display: flex;
+    gap: 15px;
+    box-shadow: 0 -5px 20px rgba(0,0,0,0.05);
+}
+
+.chat-bar input {
+    flex: 1;
+    border: 2px solid #eee;
+    border-radius: 50px;
+    padding: 0 20px;
+    transition: border 0.3s;
+}
+
+.chat-bar input:focus {
+    border-color: var(--primary-purple);
+    outline: none;
+}
+
+.send-btn {
+    background: var(--action-orange);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 50px;
+    font-weight: bold;
+    cursor: pointer;
+}
