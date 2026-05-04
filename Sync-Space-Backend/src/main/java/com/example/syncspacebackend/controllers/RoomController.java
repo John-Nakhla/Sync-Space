@@ -17,6 +17,35 @@ public class RoomController {
     private final RoomService roomService;
     private final SimpMessagingTemplate messaging;
 
+    // --- STATIC ROUTES MUST COME FIRST ---
+    
+    @GetMapping("/my-rooms")
+    public ResponseEntity<List<UserRoomResponse>> getMyRooms() {
+        return ResponseEntity.ok(roomService.getAuthenticatedUserRooms());
+    }
+
+    @PostMapping("/create")
+    public ResponseEntity<Room> createRoom(@RequestBody RoomRequest request) {
+        return ResponseEntity.ok(roomService.createRoom(request));
+    }
+
+    @PostMapping("/join/{joinCode}")
+    public ResponseEntity<Room> joinRoom(@PathVariable String joinCode) {
+        return ResponseEntity.ok(roomService.joinRoomByCode(joinCode));
+    }
+
+    // --- DYNAMIC ROUTES AFTER ---
+    
+    @GetMapping("/{roomId}")
+    public ResponseEntity<Room> getRoom(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.getRoomForEntry(roomId));
+    }
+
+    @GetMapping("/{roomId}/members")
+    public ResponseEntity<List<MemberResponse>> getMembers(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.getRoomMembers(roomId));
+    }
+
     @PostMapping("/{roomId}/start")
     public ResponseEntity<Void> startRoom(@PathVariable Long roomId) {
         roomService.startRoomSession(roomId);
@@ -41,22 +70,9 @@ public class RoomController {
     @PatchMapping("/{roomId}/promote/{userId}")
     public ResponseEntity<Void> promoteUser(@PathVariable Long roomId, @PathVariable Long userId) {
         roomService.promoteParticipant(roomId, userId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of("type", "ROLE_UPDATED", "roomId", roomId, "userId", userId));
+        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of(
+            "type", "ROLE_UPDATED", "roomId", roomId, "userId", userId
+        ));
         return ResponseEntity.ok().build();
     }
-
-    @GetMapping("/{roomId}")
-    public ResponseEntity<Room> getRoom(@PathVariable Long roomId) { return ResponseEntity.ok(roomService.getRoomForEntry(roomId)); }
-
-    @GetMapping("/my-rooms")
-    public ResponseEntity<List<UserRoomResponse>> getMyRooms() { return ResponseEntity.ok(roomService.getAuthenticatedUserRooms()); }
-
-    @PostMapping("/create")
-    public ResponseEntity<Room> createRoom(@RequestBody RoomRequest request) { return ResponseEntity.ok(roomService.createRoom(request)); }
-
-    @PostMapping("/join/{joinCode}")
-    public ResponseEntity<Room> joinRoom(@PathVariable String joinCode) { return ResponseEntity.ok(roomService.joinRoomByCode(joinCode)); }
-
-    @GetMapping("/{roomId}/members")
-    public ResponseEntity<List<MemberResponse>> getMembers(@PathVariable Long roomId) { return ResponseEntity.ok(roomService.getRoomMembers(roomId)); }
 }
