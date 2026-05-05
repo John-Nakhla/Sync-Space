@@ -4,24 +4,26 @@ import { fetchInitialHistory, createWebSocketClient } from '../services/chatServ
 import ChatMessage from '../components/ChatMessage';
 import './ChatRoom.css';
 import ChatInput from '../components/ChatInput';
-import { jwtDecode } from 'jwt-decode'; // You'll need to: npm install jwt-decode
-
+import { jwtDecode } from 'jwt-decode';
 
 const ChatRoom = () => {
     const { roomId } = useParams();
     const navigate = useNavigate();
+
     const [messages, setMessages] = useState([]);
     const [stompClient, setStompClient] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [replyTo, setReplyTo] = useState(null);
+
     const scrollRef = useRef();
 
     const token = localStorage.getItem('token');
-
     const decoded = token ? jwtDecode(token) : null;
 
     const currentUserId = decoded?.userId;
     const currentUser = decoded?.sub || "Guest";
 
+    // ================= FETCH HISTORY + CONNECT =================
     useEffect(() => {
         const loadHistory = async () => {
             try {
@@ -41,7 +43,7 @@ const ChatRoom = () => {
 
         client.onConnect = () => {
             console.log(`Connected to Room ${roomId}`);
-            // ✅ Ensure subscription matches your Broker Registry
+
             client.subscribe(`/topic/room.${roomId}`, (payload) => {
                 const newMessage = JSON.parse(payload.body);
                 setMessages(prev => [...prev, newMessage]);
@@ -49,7 +51,7 @@ const ChatRoom = () => {
         };
 
         client.onStompError = (frame) => {
-            console.error('Broker reported error: ' + frame.headers['message']);
+            console.error('Broker error:', frame.headers['message']);
         };
 
         client.activate();
@@ -60,57 +62,81 @@ const ChatRoom = () => {
         };
     }, [roomId, navigate]);
 
+    // ================= AUTO SCROLL =================
     useEffect(() => {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
+    // ================= SEND MESSAGE =================
     const handlePublish = (content) => {
-        // ✅ FIX: Use 'stompClient' (the state) instead of 'client' (which was out of scope)
         if (stompClient && stompClient.connected) {
             const token = localStorage.getItem('token');
 
             const messageData = {
                 content,
-                sender:currentUser,
+                sender: currentUser,
                 senderId: currentUserId,
-                timestamp: new Date().toISOString()
+                parentId: replyTo?.id || null, // ✅ reply support
+                createdAt: new Date().toISOString()
             };
 
             stompClient.publish({
-                // ✅ Ensure this matches your Interceptor's extractRoomId logic (/)
                 destination: `/app/chat/${roomId}`,
                 body: JSON.stringify(messageData),
                 headers: { Authorization: `Bearer ${token}` }
             });
+
+            setReplyTo(null); // ✅ clear reply after sending
         } else {
             console.error("WebSocket not connected.");
         }
     };
 
-    if (loading) return <div className="chat-loading">Connecting to Sync Space...</div>;
+    // ================= FIND PARENT =================
+    const findMessageById = (id) => {
+        return messages.find(m => m.id === id);
+    };
+
+    if (loading) return <div className="chat-loading">Connecting...</div>;
 
     return (
         <div className="chat-container">
+
+            {/* HEADER */}
             <header className="chat-header">
-                <button className="back-button" onClick={() => navigate('/my-rooms')}>← Back</button>
-                <h2 className="purple-text">Sync Space #{roomId}</h2>
-                <div className="status-indicator">● Live</div>
+                <button onClick={() => navigate('/my-rooms')}>← Back</button>
+                <h2>Room #{roomId}</h2>
             </header>
 
+            {/* MESSAGES */}
             <main className="messages-area">
                 {messages.map((msg, index) => (
                     <ChatMessage
                         key={msg.id || index}
                         msg={msg}
+                        parentMsg={findMessageById(msg.parentId)}
                         isMine={msg.senderId === currentUserId}
+                        onReply={() => setReplyTo(msg)}
                     />
                 ))}
                 <div ref={scrollRef} />
             </main>
 
+            {/* REPLY PREVIEW */}
+            {replyTo && (
+                <div className="reply-preview">
+                    <div>
+                        <strong>{replyTo.sender}</strong>: {replyTo.content}
+                    </div>
+                    <button onClick={() => setReplyTo(null)}>✕</button>
+                </div>
+            )}
+
+            {/* INPUT */}
             <footer className="chat-footer">
                 <ChatInput onSendMessage={handlePublish} />
             </footer>
+
         </div>
     );
 };

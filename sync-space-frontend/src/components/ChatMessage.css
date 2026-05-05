@@ -3,6 +3,7 @@
     flex-direction: column;
     margin: 8px 12px;
     max-width: 60%;
+    background-color: transparent; 
 }
 
 /* LEFT SIDE (others) */
@@ -19,7 +20,7 @@
 /* Sender name */
 .sender-name {
     font-size: 12px;
-    color: #aaa;
+    color: #2606b3;
     margin-bottom: 3px;
 }
 
@@ -32,7 +33,8 @@
 
 /* My messages (right side) */
 .message-row.mine .message-bubble {
-    background-color: #6c5ce7; /* purple */
+    background-color: #6c5ce7;
+    /* purple */
     color: white;
     border-bottom-right-radius: 4px;
 }
@@ -42,4 +44,32 @@
     background-color: #2d2d2d;
     color: white;
     border-bottom-left-radius: 4px;
+}
+.message-time {
+    font-size: 10px;
+    opacity: 0.7;
+    margin-top: 4px;
+    text-align: right;
+}
+.message-row.mine .message-time {
+    color: black;
+    opacity: 0.9; /* Increased slightly for better readability */
+}
+.reply-box {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-left: 3px solid #6c5ce7;
+    padding: 6px 8px;
+    margin-bottom: 5px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.reply-text {
+    opacity: 0.8;
+}
+
+.reply-preview {
+    background: #b1d868;
+    padding: 8px;
+    border-top: 1px solid #444;
 }
