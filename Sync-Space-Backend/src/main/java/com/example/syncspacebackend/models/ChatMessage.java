@@ -19,7 +19,7 @@ public class ChatMessage {
 
     private Long senderId;
     private String sender;
-    private Long parentId;
+    private String parentId;
     private String content;
     private String fileUrl;
     private Instant createdAt = Instant.now();
