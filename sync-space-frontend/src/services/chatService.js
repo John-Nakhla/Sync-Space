@@ -18,6 +18,17 @@ export const fetchInitialHistory = (roomId) => {
     });
 };
 
+export const fetchCatchUp = (roomId, lastSeenId) => {
+    const token = localStorage.getItem('token');
+
+    return axios.get(
+        `${API_BASE}/catchup/${roomId}?lastSeenId=${lastSeenId}`,
+        {
+            headers: { Authorization: `Bearer ${token}` }
+        }
+    );
+};
+
 /**
  * Creates a STOMP client with SockJS fallback and JWT authentication.
  */

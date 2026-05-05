@@ -56,7 +56,7 @@
     opacity: 0.9; /* Increased slightly for better readability */
 }
 .reply-box {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: #b1d868;
     border-left: 3px solid #6c5ce7;
     padding: 6px 8px;
     margin-bottom: 5px;

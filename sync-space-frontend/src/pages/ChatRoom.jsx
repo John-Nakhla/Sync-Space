@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { fetchInitialHistory, createWebSocketClient } from '../services/chatService';
+import { fetchInitialHistory, fetchCatchUp, createWebSocketClient } from '../services/chatService';
 import ChatMessage from '../components/ChatMessage';
 import './ChatRoom.css';
 import ChatInput from '../components/ChatInput';
@@ -14,6 +14,7 @@ const ChatRoom = () => {
     const [stompClient, setStompClient] = useState(null);
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState(null);
+    const [lastSeenId, setLastSeenId] = useState(null);
 
     const scrollRef = useRef();
 
@@ -23,7 +24,13 @@ const ChatRoom = () => {
     const currentUserId = decoded?.userId;
     const currentUser = decoded?.sub || "Guest";
 
-    // ================= FETCH HISTORY + CONNECT =================
+    // ✅ Restore lastSeenId from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem(`lastSeen_${roomId}`);
+        if (saved) setLastSeenId(saved);
+    }, [roomId]);
+
+    // ================= FETCH + CONNECT =================
     useEffect(() => {
         const loadHistory = async () => {
             try {
@@ -41,17 +48,44 @@ const ChatRoom = () => {
 
         const client = createWebSocketClient();
 
-        client.onConnect = () => {
+        client.onConnect = async () => {
             console.log(`Connected to Room ${roomId}`);
 
+            // 🔥 1. CATCH-UP
+            if (lastSeenId) {
+                try {
+                    const res = await fetchCatchUp(roomId, lastSeenId);
+
+                    if (res.data.length > 0) {
+                        setMessages(prev => {
+                            const existingIds = new Set(prev.map(m => m.id));
+                            const newMsgs = res.data.filter(m => !existingIds.has(m.id));
+                            return [...prev, ...newMsgs];
+                        });
+
+                        const lastMsg = res.data[res.data.length - 1];
+                        if (lastMsg.redisId) {
+                            setLastSeenId(lastMsg.redisId);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Catch-up failed:", err);
+                }
+            }
+
+            // 🔥 2. SUBSCRIBE
             client.subscribe(`/topic/room.${roomId}`, (payload) => {
                 const newMessage = JSON.parse(payload.body);
-                setMessages(prev => [...prev, newMessage]);
-            });
-        };
 
-        client.onStompError = (frame) => {
-            console.error('Broker error:', frame.headers['message']);
+                setMessages(prev => {
+                    if (prev.some(m => m.id === newMessage.id)) return prev;
+                    return [...prev, newMessage];
+                });
+
+                if (newMessage.redisId) {
+                    setLastSeenId(newMessage.redisId);
+                }
+            });
         };
 
         client.activate();
@@ -60,23 +94,28 @@ const ChatRoom = () => {
         return () => {
             if (client) client.deactivate();
         };
-    }, [roomId, navigate]);
+    }, [roomId]);
+
+    // ================= SAVE lastSeenId =================
+    useEffect(() => {
+        if (lastSeenId) {
+            localStorage.setItem(`lastSeen_${roomId}`, lastSeenId);
+        }
+    }, [lastSeenId, roomId]);
 
     // ================= AUTO SCROLL =================
     useEffect(() => {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // ================= SEND MESSAGE =================
+    // ================= SEND =================
     const handlePublish = (content) => {
         if (stompClient && stompClient.connected) {
-            const token = localStorage.getItem('token');
-
             const messageData = {
                 content,
                 sender: currentUser,
                 senderId: currentUserId,
-                parentId: replyTo?.id || null, // ✅ reply support
+                parentId: replyTo?.id || null,
                 createdAt: new Date().toISOString()
             };
 
@@ -86,9 +125,7 @@ const ChatRoom = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            setReplyTo(null); // ✅ clear reply after sending
-        } else {
-            console.error("WebSocket not connected.");
+            setReplyTo(null);
         }
     };
 
@@ -97,18 +134,16 @@ const ChatRoom = () => {
         return messages.find(m => m.id === id);
     };
 
-    if (loading) return <div className="chat-loading">Connecting...</div>;
+    if (loading) return <div>Connecting...</div>;
 
     return (
         <div className="chat-container">
 
-            {/* HEADER */}
             <header className="chat-header">
                 <button onClick={() => navigate('/my-rooms')}>← Back</button>
                 <h2>Room #{roomId}</h2>
             </header>
 
-            {/* MESSAGES */}
             <main className="messages-area">
                 {messages.map((msg, index) => (
                     <ChatMessage
@@ -122,7 +157,6 @@ const ChatRoom = () => {
                 <div ref={scrollRef} />
             </main>
 
-            {/* REPLY PREVIEW */}
             {replyTo && (
                 <div className="reply-preview">
                     <div>
@@ -132,7 +166,6 @@ const ChatRoom = () => {
                 </div>
             )}
 
-            {/* INPUT */}
             <footer className="chat-footer">
                 <ChatInput onSendMessage={handlePublish} />
             </footer>
