@@ -6,15 +6,12 @@
     justify-content: center; 
     gap: 100px; /* Adjust this to space the text and card naturally */
     
-    width: 100%; /* Takes full width of the now-unconstrained #root */
+    width: 100%; 
     height: calc(100vh - 60px); /* Adjust 60px to your navbar's height */
     
-    background-color: #f3f4f9;
+    background-color: #f8f3f9;
     /* Use 'repeat' for the triangle pattern to fill the entire wide screen */
-    background-image: url('/path-to-your-pattern.png'); 
-    background-repeat: repeat;
-    
-    margin: 0;
+ 
     padding: 0 50px; /* Small padding on the sides so it doesn't touch the edges */
     box-sizing: border-box;
 }
