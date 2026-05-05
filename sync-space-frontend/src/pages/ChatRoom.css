@@ -1,96 +1,214 @@
-/* Color Palette */
+/* =========================
+   VARIABLES
+========================= */
 :root {
-    --primary-purple: #8B00FF;
-    --action-orange: #FF9100;
-    --bg-light: #f8f9fa;
+  --primary-purple: #7F77DD;
+  --primary-purple-light: #EEEDFE;
+  --action-orange: #FF9100;
+  --bg-page: #f0f2ff;
+  --bg-white: #ffffff;
+  --text-main: #1a1a2e;
+  --text-muted: #6b6375;
+  --border: #e5e4e7;
+  --radius-bubble: 18px;
+  --radius-sm: 8px;
+  --radius-pill: 50px;
+  --font: 'Segoe UI', system-ui, sans-serif;
 }
 
+/* =========================
+   CHAT CONTAINER
+========================= */
 .chat-container {
-
-    min-height: 100vh;
-    /* Recreating the geometric pattern from your image */
-    background-color: #f0f2ff;
-    background-image: linear-gradient(30deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(30deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db),
-    linear-gradient(60deg, #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db);
-    background-size: 80px 140px;
-    padding: 40px 20px;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg-page);
+  font-family: var(--font);
+  font-size: 15px;
+  color: var(--text-main);
 }
 
+/* =========================
+   HEADER
+========================= */
+.chat-header {
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
 
-.purple-text { color: var(--primary-purple); font-weight: 800; }
+.chat-header-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--primary-purple-light);
+  color: var(--primary-purple);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 13px;
+  flex-shrink: 0;
+}
 
+.chat-header-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.chat-header-status {
+  font-size: 12px;
+  color: #1D9E75;
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chat-header-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1D9E75;
+  display: inline-block;
+}
+
+/* =========================
+   MESSAGES AREA
+========================= */
 .messages-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
 }
 
-/* Chat Bubbles */
+/* =========================
+   DATE DIVIDER
+========================= */
+.date-divider {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 8px;
+  letter-spacing: 0.3px;
+}
+
+/* =========================
+   MESSAGE GROUPS
+========================= */
+.message-group {
+  display: flex;
+  flex-direction: column;
+  max-width: 68%;
+}
+
+.message-group.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.message-group.theirs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.message-sender {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+
+/* =========================
+   BUBBLES
+========================= */
 .message-bubble {
-    padding: 12px 18px;
-    border-radius: 20px;
-    font-size: 0.95rem;
-    position: relative;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  padding: 10px 16px;
+  border-radius: var(--radius-bubble);
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
-.mine {
-    align-self: flex-end;
-    background: var(--primary-purple);
-    color: white;
-    border-bottom-right-radius: 4px;
+.mine .message-bubble {
+  background: var(--primary-purple);
+  color: white;
+  border-bottom-right-radius: 4px;
 }
 
-.theirs {
-    align-self: flex-start;
-    background: white;
-    color: #444;
-    border-bottom-left-radius: 4px;
+.theirs .message-bubble {
+  background: var(--bg-white);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
 }
 
 .timestamp {
-    display: block;
-    font-size: 0.7rem;
-    margin-top: 5px;
-    opacity: 0.7;
+  font-size: 11px;
+  color: black;
+  margin-top: 3px;
+  padding: 0 4px;
 }
 
-/* Input Bar */
+/* =========================
+   INPUT BAR
+========================= */
 .chat-bar {
-    background: white;
-    padding: 1.5rem 2rem;
-    display: flex;
-    gap: 15px;
-    box-shadow: 0 -5px 20px rgba(0,0,0,0.05);
+  background: var(--bg-white);
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.room_number{
+    color: #800a7a;
 }
 
 .chat-bar input {
-    flex: 1;
-    border: 2px solid #eee;
-    border-radius: 50px;
-    padding: 0 20px;
-    transition: border 0.3s;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 10px 18px;
+  font-size: 14px;
+  font-family: var(--font);
+  background: #f8f9fa;
+  color: var(--text-main);
+  transition: border-color 0.2s;
+  outline: none;
 }
 
 .chat-bar input:focus {
-    border-color: var(--primary-purple);
-    outline: none;
+  border-color: var(--primary-purple);
+  background: var(--bg-white);
 }
 
 .send-btn {
-    background: var(--action-orange);
-    color: white;
-    border: none;
-    padding: 12px 30px;
-    border-radius: 50px;
-    font-weight: bold;
-    cursor: pointer;
+  background: var(--action-orange);
+  color: white;
+  border: none;
+  padding: 10px 22px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
 }
+
+.send-btn:hover { opacity: 0.88; }
+.send-btn:active { transform: scale(0.97); }

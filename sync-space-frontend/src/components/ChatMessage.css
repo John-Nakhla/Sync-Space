@@ -1,75 +1,188 @@
+/* =========================
+   MESSAGE ROW
+========================= */
 .message-row {
     display: flex;
     flex-direction: column;
-    margin: 8px 12px;
-    max-width: 60%;
-    background-color: transparent; 
+    margin: 4px 12px;
+    max-width: 62%;
 }
 
-/* LEFT SIDE (others) */
 .message-row.other {
+    align-self: flex-start;
     align-items: flex-start;
 }
 
-/* RIGHT SIDE (me) */
 .message-row.mine {
+    align-self: flex-end;
     align-items: flex-end;
     margin-left: auto;
 }
 
-/* Sender name */
+/* =========================
+   SENDER NAME
+========================= */
 .sender-name {
-    font-size: 12px;
-    color: #2606b3;
+    font-size: 11px;
+    font-weight: 500;
+    color: #534AB7;
     margin-bottom: 3px;
+    padding: 0 2px;
 }
 
-/* Message bubble */
+/* =========================
+   BUBBLE
+========================= */
 .message-bubble {
     padding: 10px 14px;
     border-radius: 16px;
-    word-wrap: break-word;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-word;
 }
 
-/* My messages (right side) */
 .message-row.mine .message-bubble {
-    background-color: #6c5ce7;
-    /* purple */
-    color: white;
+    background-color: #7F77DD;
+    color: #EEEDFE;
     border-bottom-right-radius: 4px;
 }
 
-/* Other messages (left side) */
 .message-row.other .message-bubble {
-    background-color: #2d2d2d;
-    color: white;
+    background-color: #ffffff;
+    color: #1a1a2e;
+    border: 1px solid #e5e4e7;
     border-bottom-left-radius: 4px;
 }
+
+/* =========================
+   TIMESTAMP
+========================= */
 .message-time {
-    font-size: 10px;
-    opacity: 0.7;
-    margin-top: 4px;
-    text-align: right;
+    font-size: 11px;
+    color: #080111;
+    margin-top: 3px;
+    padding: 0 2px;
 }
-.message-row.mine .message-time {
-    color: black;
-    opacity: 0.9; /* Increased slightly for better readability */
-}
+
+/* =========================
+   REPLY BOX (inside bubble)
+========================= */
 .reply-box {
-    background-color: #b1d868;
-    border-left: 3px solid #6c5ce7;
-    padding: 6px 8px;
-    margin-bottom: 5px;
-    border-radius: 6px;
-    font-size: 12px;
+    background: rgba(255, 255, 255, 0.18);
+    border-left: 3px solid rgba(255, 255, 255, 0.6);
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border-radius: 0 6px 6px 0;
+}
+
+/* reply-box inside OTHER's bubble (white bg) */
+.message-row.other .reply-box {
+    background: #EEEDFE;
+    border-left-color: #7F77DD;
+}
+
+.reply-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 2px;
+}
+
+.message-row.other .reply-label {
+    color: #534AB7;
 }
 
 .reply-text {
-    opacity: 0.8;
+    font-size: 12px;
+    color: rgba(14, 0, 0, 0.911);
+    line-height: 1.4;
 }
 
+.message-row.other .reply-text {
+    color: #3C3489;
+    opacity: 0.85;
+}
+
+/* =========================
+   REPLY PREVIEW BAR
+   (shown above input when replying)
+========================= */
 .reply-preview {
-    background: #b1d868;
-    padding: 8px;
-    border-top: 1px solid #444;
+    background: #ffffff;
+    border-top: 1px solid #e5e4e7;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.reply-preview-accent {
+    width: 3px;
+    border-radius: 2px;
+    background: #7F77DD;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.reply-preview-content {
+    flex: 1;
+}
+
+.reply-preview-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #534AB7;
+    margin: 0 0 2px;
+}
+
+.reply-preview-text {
+    font-size: 12px;
+    color: #6b6375;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reply-preview-close {
+    background: none;
+    border: none;
+    color: #6b6375;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.reply-preview-close:hover {
+    color: #1a1a2e;
+}
+
+
+.reply-btn {
+    background: none;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: #6b6375;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-top: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.message-row:hover .reply-btn {
+    opacity: 1;
+}
+
+.reply-btn:hover {
+    background: #EEEDFE;
+    color: #534AB7;
+}
+
+.reply-btn:active {
+    transform: scale(0.96);
 }

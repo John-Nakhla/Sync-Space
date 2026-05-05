@@ -141,7 +141,7 @@ const ChatRoom = () => {
 
             <header className="chat-header">
                 <button onClick={() => navigate('/my-rooms')}>← Back</button>
-                <h2>Room #{roomId}</h2>
+                <h2 className='room_number'>Room #{roomId}</h2>
             </header>
 
             <main className="messages-area">
