@@ -28,24 +28,33 @@ public class ChatService {
         try {
             message.setRoomId(roomId);
 
-            // 1. Permanent Vault: Save to MongoDB\
-            System.out.println(message);
-            System.out.println("DEBUG: Attempting to save to MongoDB: " + message.getContent());
+            // 1. Save to MongoDB (source of truth)
             chatRepository.save(message);
-            System.out.println("DEBUG: Successfully saved to MongoDB!");
 
-            // 2. Multi-Server Bridge: Publish JSON string to Redis
+            // 2. Write to Redis Stream FIRST (this generates the ID)
+            String streamKey = "stream:room:" + roomId;
+
             String jsonMessage = objectMapper.writeValueAsString(message);
-            System.out.println(jsonMessage);
-            redisTemplate.convertAndSend("chat.room." + roomId, jsonMessage);
 
             ObjectRecord<String, String> record = StreamRecords.newRecord()
-                    .in("stream:room:" + roomId)
+                    .in(streamKey)
                     .ofObject(jsonMessage);
 
             RecordId recordId = redisTemplate.opsForStream().add(record);
+
+            // 3. Attach Redis Stream ID to message
             message.setRedisId(recordId.getValue());
-            redisTemplate.opsForStream().trim("stream:room:" + roomId, 100);
+
+            // 4. Serialize AGAIN so redisId is included
+            String finalJson = objectMapper.writeValueAsString(message);
+            System.out.println("in service");
+            System.out.println(finalJson);
+
+            // 5. Publish to WebSocket (or Redis pub/sub)
+            redisTemplate.convertAndSend("chat.room." + roomId, finalJson);
+
+            // 6. Optional: trim stream (keep last 100 messages)
+            redisTemplate.opsForStream().trim(streamKey, 100);
 
         } catch (Exception e) {
             e.printStackTrace();

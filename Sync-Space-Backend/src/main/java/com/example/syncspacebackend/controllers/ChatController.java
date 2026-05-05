@@ -30,7 +30,7 @@ public class ChatController {
         String sender = ((UserPrincipal) authentication.getPrincipal()).getUsername();
         message.setSender(sender);
         message.setSenderId(userId);
-
+        System.out.println("here in controller");
         chatService.handleMessage(roomId, message);
     }
 }
