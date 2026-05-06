@@ -212,3 +212,32 @@
 
 .send-btn:hover { opacity: 0.88; }
 .send-btn:active { transform: scale(0.97); }
+
+.admin-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.pause-btn {
+    background-color: #ff4d4f;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.resume-btn {
+    background-color: #52c41a;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.room-paused-banner {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 8px;
+    text-align: center;
+    font-weight: bold;
+}

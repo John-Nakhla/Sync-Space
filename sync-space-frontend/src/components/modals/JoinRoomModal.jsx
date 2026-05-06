@@ -3,18 +3,37 @@ import { joinRoom } from "../../services/roomService";
 
 function JoinRoomModal({ onClose }) {
   const [code, setCode] = useState("");
+  const [error, setError] = useState(""); // Track error messages
+  const [loading, setLoading] = useState(false);
 
   const handleJoin = async (e) => {
     e.preventDefault();
-    await joinRoom(code);
-    alert("Joined room!");
-    onClose();
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await joinRoom(code);
+
+      // We check the string returned from our Java method
+      if (response.startsWith("Error:")) {
+        setError(response.replace("Error:", "").trim());
+      } else if (response.startsWith("Already joined:")) {
+        setError("You are already in this room.");
+      } else {
+        // Success!
+        onClose(); 
+        window.location.reload(); // Refresh to show new room in list
+      }
+    } catch (err) {
+      setError("Something went wrong. Please check your code.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div style={styles.overlay}>
       <div style={styles.box}>
-
         <div style={styles.iconBadge}>⊕</div>
         <h3 style={styles.title}>Join a room</h3>
         <p style={styles.subtitle}>Enter the code shared with you</p>
@@ -25,13 +44,28 @@ function JoinRoomModal({ onClose }) {
             <input
               style={{ ...styles.input, letterSpacing: "2px", fontSize: "16px" }}
               placeholder="e.g. XK-9472"
-              onChange={(e) => setCode(e.target.value)}
+              value={code}
+              onChange={(e) => setCode(e.target.value)} // Auto uppercase
+              required
             />
           </div>
-          <button type="submit" style={styles.btnPrimary}>Join room</button>
+
+          {/* Error Message Display */}
+          {error && (
+            <div style={styles.errorBanner}>
+              {error}
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            style={styles.btnPrimary} 
+            disabled={loading}
+          >
+            {loading ? "Joining..." : "Join room"}
+          </button>
           <button type="button" onClick={onClose} style={styles.btnGhost}>Cancel</button>
         </form>
-
       </div>
     </div>
   );

@@ -51,6 +51,8 @@ const MyRooms = () => {
                             <div className="room-info">
                                 <h2>{room.roomName}</h2>
                                 <p>{room.roomDescription}</p>
+                                <p>{room.status}</p>
+                                <p>{room.joinCode}</p>
                             </div>
                             <div className="room-footer">
                                 <span className={`role-badge ${room.role.toLowerCase()}`}>

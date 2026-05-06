@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchInitialHistory, fetchCatchUp, createWebSocketClient } from '../services/chatService';
+// Import the new service methods
+import { fetchRoomInfo, pauseRoomAction, resumeRoomAction } from '../services/roomService';
 import ChatMessage from '../components/ChatMessage';
 import './ChatRoom.css';
 import ChatInput from '../components/ChatInput';
@@ -15,20 +17,33 @@ const ChatRoom = () => {
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState(null);
     const [lastSeenId, setLastSeenId] = useState(null);
+    const [roomStatus, setRoomStatus] = useState("ACTIVE");
+    const [ownerId, setOwnerId] = useState(null);
 
     const scrollRef = useRef();
 
     const token = localStorage.getItem('token');
     const decoded = token ? jwtDecode(token) : null;
-
     const currentUserId = decoded?.userId;
     const currentUser = decoded?.sub || "Guest";
+    const isAdmin = ownerId === currentUserId;
 
-    // ✅ Restore lastSeenId from localStorage
+    // ================= RESTORE lastSeenId =================
     useEffect(() => {
         const saved = localStorage.getItem(`lastSeen_${roomId}`);
         if (saved) setLastSeenId(saved);
     }, [roomId]);
+
+    // ================= LOAD ROOM INFO (Using Service) =================
+    const loadRoomInfoData = async () => {
+        try {
+            const data = await fetchRoomInfo(roomId);
+            setOwnerId(data.ownerId);
+            setRoomStatus(data.status);
+        } catch (err) {
+            console.error("Failed to load room info", err);
+        }
+    };
 
     // ================= FETCH + CONNECT =================
     useEffect(() => {
@@ -45,46 +60,41 @@ const ChatRoom = () => {
         };
 
         loadHistory();
+        loadRoomInfoData(); 
 
         const client = createWebSocketClient();
 
         client.onConnect = async () => {
-            console.log(`Connected to Room ${roomId}`);
-
-            // 🔥 1. CATCH-UP
             if (lastSeenId) {
                 try {
                     const res = await fetchCatchUp(roomId, lastSeenId);
-
                     if (res.data.length > 0) {
                         setMessages(prev => {
                             const existingIds = new Set(prev.map(m => m.id));
                             const newMsgs = res.data.filter(m => !existingIds.has(m.id));
                             return [...prev, ...newMsgs];
                         });
-
                         const lastMsg = res.data[res.data.length - 1];
-                        if (lastMsg.redisId) {
-                            setLastSeenId(lastMsg.redisId);
-                        }
+                        if (lastMsg.redisId) setLastSeenId(lastMsg.redisId);
                     }
                 } catch (err) {
                     console.error("Catch-up failed:", err);
                 }
             }
 
-            // 🔥 2. SUBSCRIBE
             client.subscribe(`/topic/room.${roomId}`, (payload) => {
                 const newMessage = JSON.parse(payload.body);
-
                 setMessages(prev => {
                     if (prev.some(m => m.id === newMessage.id)) return prev;
                     return [...prev, newMessage];
                 });
+                if (newMessage.redisId) setLastSeenId(newMessage.redisId);
+            });
 
-                if (newMessage.redisId) {
-                    setLastSeenId(newMessage.redisId);
-                }
+            client.subscribe(`/topic/rooms/${roomId}`, (payload) => {
+                const data = JSON.parse(payload.body);
+                if (data.status) setRoomStatus(data.status);
+                if (data.ownerId) setOwnerId(data.ownerId);
             });
         };
 
@@ -110,7 +120,9 @@ const ChatRoom = () => {
 
     // ================= SEND =================
     const handlePublish = (content) => {
-        if (stompClient && stompClient.connected) {
+        if (roomStatus !== "ACTIVE") return;
+
+        if (stompClient?.connected) {
             const messageData = {
                 content,
                 sender: currentUser,
@@ -124,25 +136,53 @@ const ChatRoom = () => {
                 body: JSON.stringify(messageData),
                 headers: { Authorization: `Bearer ${token}` }
             });
-
             setReplyTo(null);
         }
     };
 
-    // ================= FIND PARENT =================
-    const findMessageById = (id) => {
-        return messages.find(m => m.id === id);
+    // ================= ADMIN ACTIONS (Using Service) =================
+    const handlePause = async () => {
+        try {
+            await pauseRoomAction(roomId);
+            // Status will be updated via WebSocket subscription
+        } catch (err) {
+            console.error("Error pausing room", err);
+        }
     };
+
+    const handleResume = async () => {
+        try {
+            await resumeRoomAction(roomId);
+            // Status will be updated via WebSocket subscription
+        } catch (err) {
+            console.error("Error resuming room", err);
+        }
+    };
+
+    const findMessageById = (id) => messages.find(m => m.id === id);
 
     if (loading) return <div>Connecting...</div>;
 
     return (
         <div className="chat-container">
-
             <header className="chat-header">
                 <button onClick={() => navigate('/my-rooms')}>← Back</button>
                 <h2 className='room_number'>Room #{roomId}</h2>
+
+                {isAdmin && (
+                    <div className="admin-controls">
+                        {roomStatus === "ACTIVE" ? (
+                            <button className="pause-btn" onClick={handlePause}>⏸ Pause</button>
+                        ) : (
+                            <button className="resume-btn" onClick={handleResume}>▶ Resume</button>
+                        )}
+                    </div>
+                )}
             </header>
+
+            {roomStatus !== "ACTIVE" && (
+                <div className="room-paused-banner">🚫 Room is paused by admin</div>
+            )}
 
             <main className="messages-area">
                 {messages.map((msg, index) => (
@@ -159,17 +199,14 @@ const ChatRoom = () => {
 
             {replyTo && (
                 <div className="reply-preview">
-                    <div>
-                        <strong>{replyTo.sender}</strong>: {replyTo.content}
-                    </div>
+                    <div><strong>{replyTo.sender}</strong>: {replyTo.content}</div>
                     <button onClick={() => setReplyTo(null)}>✕</button>
                 </div>
             )}
 
             <footer className="chat-footer">
-                <ChatInput onSendMessage={handlePublish} />
+                <ChatInput onSendMessage={handlePublish} disabled={roomStatus !== "ACTIVE"} />
             </footer>
-
         </div>
     );
 };
