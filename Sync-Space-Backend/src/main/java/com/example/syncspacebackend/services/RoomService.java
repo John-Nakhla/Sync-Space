@@ -5,6 +5,7 @@ import com.example.syncspacebackend.models.*;
 import com.example.syncspacebackend.repositories.*;
 import com.example.syncspacebackend.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -21,59 +22,101 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final RoomParticipantRepository participantRepository;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private User getAuthenticatedUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getPrincipal().equals("anonymousUser")) {
+
+        if (auth == null || !auth.isAuthenticated()) {
             throw new RuntimeException("User not authenticated");
         }
-        UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
-        return userRepository.getReferenceById(principal.getId());
+
+        Object principal = auth.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal userPrincipal)) {
+            throw new RuntimeException("Invalid principal type: " + principal);
+        }
+
+        return userRepository.getReferenceById(userPrincipal.getId());
     }
 
-    @Transactional(readOnly = true)
     public List<UserRoomResponse> getAuthenticatedUserRooms() {
+
         User user = getAuthenticatedUser();
+
         return participantRepository.findAllByUserId(user.getId()).stream()
-                .map(participant -> new UserRoomResponse(
-                        participant.getRoom().getId(),
-                        participant.getRoom().getName(),
-                        participant.getRoom().getDescription(),
-                        participant.getRole()
-                ))
+                .map(participant -> {
+                    Room room = participant.getRoom();
+
+                    return new UserRoomResponse(
+                            room.getId(),
+                            room.getName(),
+                            room.getDescription(),
+                            participant.getRole().name(),
+                            room.getStatus().name(),   // ✅ status
+                            room.getJoinCode()         // ✅ join code
+                    );
+                })
                 .toList();
     }
 
     @Transactional
     public Room createRoom(String name, String description) {
         User owner = getAuthenticatedUser();
+
         Room room = Room.builder()
                 .name(name)
                 .description(description)
                 .owner(owner)
                 .joinCode(UUID.randomUUID().toString().substring(0, 8))
                 .status(Room.RoomStatus.ACTIVE)
-                .createdAt(LocalDateTime.now())
                 .build();
 
         Room savedRoom = roomRepository.save(room);
-        participantRepository.save(RoomParticipant.builder()
-                .room(savedRoom).user(owner).role(RoomParticipant.Role.ADMIN).build());
+
+        RoomParticipantId id = new RoomParticipantId();
+        id.setRoomId(savedRoom.getId());
+        id.setUserId(owner.getId());
+
+        RoomParticipant participant = RoomParticipant.builder()
+                .id(id)
+                .room(savedRoom)
+                .user(owner)
+                .role(RoomParticipant.Role.ADMIN)
+                .build();
+
+        participantRepository.save(participant);
+
         return savedRoom;
     }
 
     @Transactional
     public String joinRoom(String joinCode) {
         User user = getAuthenticatedUser();
+
+        // 1. Check if room exists
         Room room = roomRepository.findByJoinCode(joinCode)
-                .orElseThrow(() -> new RuntimeException("Invalid Room Code!"));
+                .orElse(null);
+        if (room == null) return "Error: Invalid Room Code!";
 
-        if (room.getStatus() == Room.RoomStatus.ENDED) throw new RuntimeException("Room ended");
-        if (participantRepository.existsByRoomAndUser(room, user)) return "Already in room";
+        // 2. Check if paused/ended
+        if (room.getStatus() == Room.RoomStatus.ENDED) {
+            return "Error: This room is currently paused or ended.";
+        }
 
+        // 3. Check if already joined
+        if (participantRepository.existsByRoomAndUser(room, user)) {
+            return "Already joined: You are already a member of this room.";
+        }
+
+        // 4. Success path
         participantRepository.save(RoomParticipant.builder()
-                .room(room).user(user).role(RoomParticipant.Role.MEMBER).build());
-        return room.getName();
+                .room(room)
+                .user(user)
+                .role(RoomParticipant.Role.MEMBER)
+                .build());
+
+        return "Success: " + room.getName();
     }
 
     @Transactional
@@ -91,23 +134,65 @@ public class RoomService {
     @Transactional
     public Room endRoom(Long roomId) {
         User user = getAuthenticatedUser();
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!room.getOwner().getId().equals(user.getId())) throw new RuntimeException("Unauthorized");
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Room not found"));
+
+        if (!room.getOwner().getId().equals(user.getId())) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        if (room.getStatus() == Room.RoomStatus.ENDED) {
+            return room; // already ended, avoid unnecessary update
+        }
+
         room.setStatus(Room.RoomStatus.ENDED);
         room.setEndedAt(LocalDateTime.now());
-        return roomRepository.save(room);
+        roomRepository.save(room);
+
+        // 🔥 Notify all clients in real-time
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/" + roomId,
+                new RoomStatusMessage("ENDED", room.getOwner().getId())
+        );
+
+        return room;
     }
 
     @Transactional
     public Room resumeRoom(Long roomId) {
         User user = getAuthenticatedUser();
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!participantRepository.existsByRoomAndUser(room, user)) throw new RuntimeException("Denied");
-        if (room.getStatus() == Room.RoomStatus.ENDED) {
-            room.setStatus(Room.RoomStatus.ACTIVE);
-            room.setEndedAt(null);
-            roomRepository.save(room);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Room not found"));
+
+        if (!room.getOwner().getId().equals(user.getId())) {
+            throw new RuntimeException("Unauthorized");
         }
+
+        if (room.getStatus() == Room.RoomStatus.ACTIVE) {
+            return room; // already active
+        }
+
+        room.setStatus(Room.RoomStatus.ACTIVE);
+        room.setEndedAt(null);
+        roomRepository.save(room);
+
+        // 🔥 Notify all clients in real-time
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/" + roomId,
+                new RoomStatusMessage("ACTIVE", room.getOwner().getId())
+        );
+
         return room;
+    }
+
+    public RoomDto getRoomDto(Long roomId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Room not found"));
+
+        return new RoomDto(
+                room.getId(),
+                room.getOwner().getId(),
+                room.getStatus().name()
+        );
     }
 }

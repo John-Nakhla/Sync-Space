@@ -1,5 +1,6 @@
 package com.example.syncspacebackend.controllers;
 
+import com.example.syncspacebackend.models.RoomDto;
 import com.example.syncspacebackend.models.UserRoomResponse;
 import com.example.syncspacebackend.models.Room;
 import com.example.syncspacebackend.models.RoomRequest;
@@ -45,8 +46,13 @@ public class RoomController {
         return ResponseEntity.ok(roomService.endRoom(roomId));
     }
 
-    @GetMapping("/{roomId}/resume")
+    @PostMapping("/{roomId}/resume")
     public ResponseEntity<Room> resumeRoom(@PathVariable Long roomId) {
         return ResponseEntity.ok(roomService.resumeRoom(roomId));
+    }
+
+    @GetMapping("/{roomId}")
+    public RoomDto getRoom(@PathVariable Long roomId) {
+        return roomService.getRoomDto(roomId);
     }
 }
