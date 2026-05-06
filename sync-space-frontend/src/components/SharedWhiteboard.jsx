@@ -7,25 +7,34 @@ import { WebsocketProvider } from 'y-websocket';
  * Props:
  *   roomId  — the room's numeric ID
  *   canDraw — boolean, true for ADMIN and CONTRIBUTOR in an ACTIVE room
+ *
+ * ALL users (including view-only members) connect to Yjs so they can SEE strokes.
+ * canDraw only controls whether mouse events commit new strokes.
  */
 const SharedWhiteboard = ({ roomId, canDraw }) => {
-  const canvasRef    = useRef(null);
-  const ydocRef      = useRef(null);
-  const providerRef  = useRef(null);
-  const drawing      = useRef(false);
-  const currentPath  = useRef([]);
+  const canvasRef   = useRef(null);
+  const ydocRef     = useRef(null);
+  const providerRef = useRef(null);
+  const drawing     = useRef(false);
+  const currentPath = useRef([]);
+  const canDrawRef  = useRef(canDraw); // keep a ref so mouse handlers always see latest value
+
   const [connected, setConnected] = useState(false);
 
+  // Keep ref in sync so stale closures in mouse handlers still work
   useEffect(() => {
-    if (!canDraw) return; // read-only users never connect to Yjs
+    canDrawRef.current = canDraw;
+  }, [canDraw]);
 
+  // ── Connect to Yjs (ALWAYS — even for view-only members) ─────────────────
+  useEffect(() => {
     const token = localStorage.getItem('token');
     const ydoc  = new Y.Doc();
     ydocRef.current = ydoc;
 
     const provider = new WebsocketProvider(
-      `ws://localhost:1234`,       // y-websocket server
-      `room-${roomId}`,            // unique doc per room
+      'ws://localhost:1234',
+      `room-${roomId}`,
       ydoc,
       { params: { room: roomId, token } }
     );
@@ -33,7 +42,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
 
     provider.on('status', ({ status }) => setConnected(status === 'connected'));
 
-    // ── Observe shared strokes array and redraw ──────────────────────────────
     const strokes = ydoc.getArray('strokes');
 
     const redraw = () => {
@@ -56,16 +64,16 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
     };
 
     strokes.observe(redraw);
-    redraw(); // draw whatever is already persisted in the doc
+    redraw();
 
     return () => {
       strokes.unobserve(redraw);
       provider.destroy();
       ydoc.destroy();
     };
-  }, [roomId, canDraw]);
+  }, [roomId]); // only reconnect if roomId changes — NOT on canDraw changes
 
-  // ── Mouse helpers ────────────────────────────────────────────────────────────
+  // ── Mouse helpers ─────────────────────────────────────────────────────────
 
   const getPos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -73,19 +81,18 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
   };
 
   const onMouseDown = (e) => {
-    if (!canDraw || !ydocRef.current) return;
+    if (!canDrawRef.current || !ydocRef.current) return;
     drawing.current     = true;
     currentPath.current = [getPos(e)];
   };
 
   const onMouseMove = (e) => {
-    if (!drawing.current || !canDraw || !ydocRef.current) return;
+    if (!drawing.current || !canDrawRef.current || !ydocRef.current) return;
     const pos = getPos(e);
     currentPath.current.push(pos);
 
-    // Smooth local preview while drawing
     const ctx = canvasRef.current.getContext('2d');
-    const pts  = currentPath.current;
+    const pts = currentPath.current;
     if (pts.length < 2) return;
     ctx.beginPath();
     ctx.strokeStyle = '#000000';
@@ -97,7 +104,7 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
   };
 
   const onMouseUp = () => {
-    if (!drawing.current || !canDraw || !ydocRef.current) return;
+    if (!drawing.current || !canDrawRef.current || !ydocRef.current) return;
     drawing.current = false;
 
     if (currentPath.current.length < 2) {
@@ -105,44 +112,22 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
       return;
     }
 
-    // Commit stroke to Yjs → synced to all connected clients instantly
     const strokes = ydocRef.current.getArray('strokes');
     strokes.push([{
       points: currentPath.current,
       color:  '#000000',
-      width:  2
+      width:  2,
     }]);
     currentPath.current = [];
   };
 
-  // ── Clear whiteboard (admin/contributor action) ───────────────────────────
-
   const handleClear = () => {
-    if (!ydocRef.current || !canDraw) return;
+    if (!ydocRef.current || !canDrawRef.current) return;
     const strokes = ydocRef.current.getArray('strokes');
-    ydocRef.current.transact(() => {
-      strokes.delete(0, strokes.length);
-    });
+    ydocRef.current.transact(() => strokes.delete(0, strokes.length));
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-
-  if (!canDraw) {
-    return (
-      <div style={styles.blockedWrapper}>
-        <div style={styles.blockedBox}>
-          <span style={{ fontSize: 40 }}>👁</span>
-          <p style={{ marginTop: 12, color: '#555', fontWeight: 500 }}>
-            View Only
-          </p>
-          <p style={{ color: '#888', fontSize: 13 }}>
-            Ask the Admin to promote you to Contributor to draw.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={styles.wrapper}>
       {/* Toolbar */}
@@ -150,15 +135,25 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
         <span style={{ color: connected ? '#27ae60' : '#e67e22', fontWeight: 600 }}>
           {connected ? '🟢 Live' : '🟡 Connecting…'}
         </span>
-        <button onClick={handleClear} style={styles.clearBtn}>🗑 Clear Board</button>
+
+        {/* View-only banner */}
+        {!canDraw && (
+          <span style={styles.viewOnlyBanner}>
+            👁 View Only — ask the Admin to promote you to draw
+          </span>
+        )}
+
+        {canDraw && (
+          <button onClick={handleClear} style={styles.clearBtn}>🗑 Clear Board</button>
+        )}
       </div>
 
-      {/* Canvas */}
+      {/* Canvas — always rendered so Yjs can paint remote strokes */}
       <canvas
         ref={canvasRef}
         width={1400}
         height={800}
-        style={styles.canvas}
+        style={{ ...styles.canvas, cursor: canDraw ? 'crosshair' : 'default' }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -176,12 +171,20 @@ const styles = {
     background:    '#f5f5f5',
   },
   toolbar: {
-    display:         'flex',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    padding:         '8px 16px',
-    background:      '#ffffff',
-    borderBottom:    '1px solid #e0e0e0',
+    display:        'flex',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    padding:        '8px 16px',
+    background:     '#ffffff',
+    borderBottom:   '1px solid #e0e0e0',
+    gap:            '12px',
+  },
+  viewOnlyBanner: {
+    fontSize:        13,
+    color:           '#888',
+    fontStyle:       'italic',
+    flex:            1,
+    textAlign:       'center',
   },
   clearBtn: {
     background:   '#e74c3c',
@@ -194,24 +197,9 @@ const styles = {
   },
   canvas: {
     flex:       1,
-    cursor:     'crosshair',
     background: '#ffffff',
     display:    'block',
     maxWidth:   '100%',
-  },
-  blockedWrapper: {
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    height:         '100%',
-    background:     '#fafafa',
-  },
-  blockedBox: {
-    textAlign:    'center',
-    padding:      40,
-    borderRadius: 12,
-    background:   '#fff',
-    boxShadow:    '0 2px 12px rgba(0,0,0,0.08)',
   },
 };
 

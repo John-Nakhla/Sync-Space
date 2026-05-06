@@ -34,9 +34,8 @@ public class RoomService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        // Use saveAndFlush to instantly generate the ID for the composite key
         Room savedRoom = roomRepository.saveAndFlush(room);
-        
+
         RoomParticipantId adminId = new RoomParticipantId(user.getId(), savedRoom.getId());
         participantRepository.save(RoomParticipant.builder()
                 .id(adminId).room(savedRoom).user(user).role(RoomParticipant.Role.ADMIN).build());
@@ -48,45 +47,49 @@ public class RoomService {
         User user = getAuthenticatedUser();
         Room room = roomRepository.findByJoinCode(joinCode.toUpperCase())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invalid Code"));
-        
+
         if (room.getStatus() == Room.RoomStatus.ENDED) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Room is permanently closed.");
         }
 
-        if (!participantRepository.existsByRoomAndUser(room, user)) {
-            RoomParticipantId memberId = new RoomParticipantId(user.getId(), room.getId());
+        // FIX: use composite key lookup instead of existsByRoomAndUser (unreliable with @EmbeddedId)
+        RoomParticipantId pid = new RoomParticipantId(user.getId(), room.getId());
+        if (!participantRepository.existsById(pid)) {
             participantRepository.save(RoomParticipant.builder()
-                .id(memberId).room(room).user(user).role(RoomParticipant.Role.MEMBER).build());
+                    .id(pid).room(room).user(user).role(RoomParticipant.Role.MEMBER).build());
         }
         return room;
     }
 
     public Room getRoomForEntry(Long roomId) {
         User user = getAuthenticatedUser();
-        Room room = roomRepository.findById(roomId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        RoomParticipant participant = participantRepository.findByRoomAndUser(room, user)
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        // FIX: use composite key lookup instead of findByRoomAndUser (unreliable with @EmbeddedId)
+        RoomParticipantId pid = new RoomParticipantId(user.getId(), room.getId());
+        participantRepository.findById(pid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member"));
 
-        // If WAITING or ENDED, ONLY Admin can enter (to see the Lobby/Start button)
-        if ((room.getStatus() == Room.RoomStatus.WAITING || room.getStatus() == Room.RoomStatus.ENDED) 
-            && participant.getRole() != RoomParticipant.Role.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Wait for the Admin to start the session.");
-        }
         return room;
     }
 
     @Transactional
     public void startRoomSession(Long roomId) {
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         room.setStatus(Room.RoomStatus.ACTIVE);
         roomRepository.save(room);
     }
 
     @Transactional
     public void restartRoom(Long roomId) {
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         room.setStatus(Room.RoomStatus.WAITING);
         room.setEndedAt(null);
         roomRepository.save(room);
@@ -94,8 +97,10 @@ public class RoomService {
 
     @Transactional
     public void endRoom(Long roomId) {
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         room.setStatus(Room.RoomStatus.ENDED);
         room.setEndedAt(LocalDateTime.now());
         roomRepository.save(room);
@@ -103,25 +108,54 @@ public class RoomService {
 
     @Transactional
     public void promoteParticipant(Long roomId, Long targetUserId) {
-        Room room = roomRepository.findById(roomId).orElseThrow();
-        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        
-        RoomParticipant target = participantRepository.findByRoomAndUserId(room, targetUserId).orElseThrow();
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+
+        // FIX: findByRoomAndUserId fails with @EmbeddedId composite keys.
+        // Use findById(compositeKey) — always reliable with Spring Data JPA.
+        RoomParticipantId pid = new RoomParticipantId(targetUserId, roomId);
+        RoomParticipant target = participantRepository.findById(pid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
+
         target.setRole(RoomParticipant.Role.CONTRIBUTOR);
         participantRepository.save(target);
+    }
+
+    @Transactional
+    public void removeParticipant(Long roomId, Long targetUserId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!room.getOwner().getId().equals(getAuthenticatedUser().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (room.getOwner().getId().equals(targetUserId))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot remove the Admin");
+
+        // FIX: same composite key fix — findByRoomAndUserId is unreliable with @EmbeddedId.
+        RoomParticipantId pid = new RoomParticipantId(targetUserId, roomId);
+        RoomParticipant target = participantRepository.findById(pid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
+
+        participantRepository.delete(target);
     }
 
     public List<UserRoomResponse> getAuthenticatedUserRooms() {
         User user = getAuthenticatedUser();
         return participantRepository.findAllByUserId(user.getId()).stream()
-                .map(p -> new UserRoomResponse(p.getRoom().getId(), p.getRoom().getName(), 
-                     p.getRoom().getDescription(), p.getRoom().getJoinCode(), 
-                     p.getRoom().getStatus().name(), p.getRole().name()))
+                .map(p -> new UserRoomResponse(
+                        p.getRoom().getId(),
+                        p.getRoom().getName(),
+                        p.getRoom().getDescription(),
+                        p.getRoom().getJoinCode(),
+                        p.getRoom().getStatus().name(),
+                        p.getRole().name()))
                 .collect(Collectors.toList());
     }
 
     public List<MemberResponse> getRoomMembers(Long roomId) {
-        Room room = roomRepository.findById(roomId).orElseThrow();
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
         return participantRepository.findAllByRoom(room).stream()
                 .map(p -> new MemberResponse(p.getUser().getId(), p.getUser().getUsername(), p.getRole().name()))
                 .collect(Collectors.toList());

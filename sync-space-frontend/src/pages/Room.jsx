@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
@@ -6,45 +6,84 @@ import axios from 'axios';
 import SharedWhiteboard from '../components/SharedWhiteboard';
 import './Room.css';
 
+const API = 'http://localhost:8080/api/rooms';
+
 const Room = () => {
   const { roomId } = useParams();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate   = useNavigate();
+  const location   = useLocation();
 
-  const [userRole, setUserRole] = useState(location.state?.role || 'MEMBER');
-  const [roomStatus, setRoomStatus] = useState('WAITING');
+  const [userRole,    setUserRole]    = useState(location.state?.role || 'MEMBER');
+  const [roomStatus,  setRoomStatus]  = useState('WAITING');
   const [roomDetails, setRoomDetails] = useState({ name: '', joinCode: '' });
-  const [members, setMembers] = useState([]);
-  const [showCode, setShowCode] = useState(false); // Toggle for Admin to see code inside room
+  const [members,     setMembers]     = useState([]);
+  const [showCode,    setShowCode]    = useState(false);
+  const [activeView,  setActiveView]  = useState('whiteboard');
+  const [toast,       setToast]       = useState(null);
 
-  // Only Admin and Contributors can draw while ACTIVE
+  // ── Refs to avoid stale closures inside WebSocket handlers ───────────────
+  const navigateRef = useRef(navigate);
+  const userRoleRef = useRef(userRole);
+
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+  useEffect(() => { userRoleRef.current = userRole; }, [userRole]);
+
+  // canDraw re-computes automatically whenever userRole or roomStatus changes
   const canDraw = (userRole === 'ADMIN' || userRole === 'CONTRIBUTOR') && roomStatus === 'ACTIVE';
 
-  const fetchData = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      // Fetch Room info
-      const res = await axios.get(`http://localhost:8080/api/rooms/${roomId}`, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
-      setRoomStatus(res.data.status);
-      setRoomDetails({ name: res.data.name, joinCode: res.data.joinCode });
-
-      // Fetch Members list
-      const mems = await axios.get(`http://localhost:8080/api/rooms/${roomId}/members`, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
-      setMembers(mems.data);
-    } catch (e) {
-      // If blocked (e.g. member trying to enter inactive room directly via URL)
-      navigate('/my-rooms');
-    }
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
   };
 
+  const authHeaders = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  });
+
+  // ── fetchData: syncs room status, members, AND current user's role ────────
+  const fetchData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const myId  = localStorage.getItem('userId');
+      if (!token) { navigate('/login'); return; }
+
+      const [roomRes, membersRes] = await Promise.all([
+        axios.get(`${API}/${roomId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API}/${roomId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+
+      setRoomStatus(roomRes.data.status);
+      setRoomDetails({ name: roomRes.data.name, joinCode: roomRes.data.joinCode });
+      setMembers(membersRes.data);
+
+      // Always sync current user's role from the members list so promotion
+      // works correctly even if the WS userId comparison ever drifts.
+      const me = membersRes.data.find(m => String(m.id) === String(myId));
+      if (me) setUserRole(me.role);
+
+    } catch (err) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        navigate('/my-rooms');
+      }
+    }
+  }, [roomId, navigate]);
+
+  // ── FIX 1: Poll every 3 s while in WAITING lobby ─────────────────────────
+  // Guarantees members auto-switch to the workspace even if they missed the
+  // WebSocket START_SIGNAL (race condition: WS subscribe races with page load).
+  useEffect(() => {
+    if (roomStatus !== 'WAITING') return;
+    const interval = setInterval(fetchData, 3000);
+    return () => clearInterval(interval);
+  }, [roomStatus, fetchData]);
+
+  // ── Initial load + WebSocket setup ───────────────────────────────────────
   useEffect(() => {
     fetchData();
 
-    // WebSocket Connection
     const client = new Client({
       webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
       reconnectDelay: 5000,
@@ -53,102 +92,174 @@ const Room = () => {
           const data = JSON.parse(msg.body);
           if (String(data.roomId) !== String(roomId)) return;
 
-          if (data.type === 'START_SIGNAL') {
-            setRoomStatus('ACTIVE'); // Pulls everyone from lobby to workspace
-          } else if (data.type === 'RESTART_SIGNAL') {
-            setRoomStatus('WAITING');
-          } else if (data.type === 'END_SIGNAL') {
-            alert('This room was permanently closed by the Admin.');
-            navigate('/my-rooms'); // Kicks everyone out
-          } else if (data.type === 'ROLE_UPDATED') {
-            // Update my own role if I was promoted
-            const myId = localStorage.getItem('userId');
-            if (String(data.userId) === String(myId)) {
-              setUserRole('CONTRIBUTOR');
-              alert('🎉 You have been promoted to Contributor! You can now draw.');
-            }
-            fetchData(); // Refresh list to show new badge
+          const myId = localStorage.getItem('userId');
+
+          switch (data.type) {
+
+            case 'START_SIGNAL':
+              // Instantly switch lobby → workspace for all WS subscribers
+              setRoomStatus('ACTIVE');
+              showToast('Session is now live!', 'success');
+              break;
+
+            case 'RESTART_SIGNAL':
+              setRoomStatus('WAITING');
+              showToast('Room reset to lobby.', 'info');
+              break;
+
+            case 'END_SIGNAL':
+              // Admin already confirmed via dialog — redirect silently.
+              // Members get an informational alert.
+              if (userRoleRef.current === 'ADMIN') {
+                navigateRef.current('/my-rooms');
+              } else {
+                alert('This room has been closed by the Admin.');
+                navigateRef.current('/my-rooms');
+              }
+              break;
+
+            case 'ROLE_UPDATED':
+              if (String(data.userId) === String(myId)) {
+                // Optimistic instant update — grants draw without waiting for fetchData
+                setUserRole('CONTRIBUTOR');
+                showToast('You are now a Contributor! You can draw.', 'success');
+              }
+              // fetchData re-syncs members list AND re-confirms role from backend
+              fetchData();
+              break;
+
+            case 'KICK_SIGNAL':
+              if (String(data.userId) === String(myId)) {
+                alert('You have been removed from this room.');
+                navigateRef.current('/my-rooms');
+              } else {
+                fetchData();
+              }
+              break;
+
+            default:
+              break;
           }
         });
-      }
+      },
     });
 
     client.activate();
     return () => client.deactivate();
-  }, [roomId, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
-  // Actions
+  // ── Admin actions ─────────────────────────────────────────────────────────
+
   const handleStart = async () => {
-    const endpoint = roomStatus === 'ENDED' ? 'restart' : 'start';
-    const token = localStorage.getItem('token');
-    await axios.post(`http://localhost:8080/api/rooms/${roomId}/${endpoint}`, {}, { 
-      headers: { Authorization: `Bearer ${token}` } 
-    });
+    try {
+      const endpoint = roomStatus === 'ENDED' ? 'restart' : 'start';
+      await axios.post(`${API}/${roomId}/${endpoint}`, {}, authHeaders());
+
+      // ── FIX 2: Optimistic local update for the admin ──────────────────────
+      // The admin triggered the action so update their own view immediately.
+      // The WebSocket START_SIGNAL / RESTART_SIGNAL handles every other client.
+      if (endpoint === 'start') {
+        setRoomStatus('ACTIVE');           // lobby → workspace instantly for admin
+        showToast('Session is now live!', 'success');
+      } else {
+        setRoomStatus('WAITING');          // workspace → lobby instantly for admin
+        showToast('Room reset to lobby.', 'info');
+      }
+    } catch (err) {
+      showToast('Failed to update session. Please try again.', 'warning');
+    }
   };
 
   const handleCloseAll = async () => {
-    if (!window.confirm('Close this room for everyone? This kicks all members out.')) return;
-    const token = localStorage.getItem('token');
-    await axios.post(`http://localhost:8080/api/rooms/${roomId}/end`, {}, { 
-      headers: { Authorization: `Bearer ${token}` } 
-    });
+    if (!window.confirm('Close this room for everyone? All members will be redirected.')) return;
+    try {
+      await axios.post(`${API}/${roomId}/end`, {}, authHeaders());
+      // END_SIGNAL WebSocket message redirects everyone including admin
+    } catch (err) {
+      showToast('Failed to close room.', 'warning');
+    }
   };
 
   const handlePromote = async (targetUserId) => {
-    const token = localStorage.getItem('token');
-    await axios.patch(`http://localhost:8080/api/rooms/${roomId}/promote/${targetUserId}`, {}, { 
-      headers: { Authorization: `Bearer ${token}` } 
-    });
+    try {
+      await axios.patch(`${API}/${roomId}/promote/${targetUserId}`, {}, authHeaders());
+      showToast('Member promoted to Contributor.', 'success');
+    } catch (err) {
+      showToast('Failed to promote member.', 'warning');
+    }
+  };
+
+  const handleRemove = async (targetUserId, username) => {
+    if (!window.confirm(`Remove "${username}" from this room?`)) return;
+    try {
+      await axios.delete(`${API}/${roomId}/remove/${targetUserId}`, authHeaders());
+      showToast(`${username} removed.`, 'warning');
+    } catch (err) {
+      showToast('Failed to remove member.', 'warning');
+    }
   };
 
   const copyCode = () => {
     navigator.clipboard.writeText(roomDetails.joinCode);
-    alert(`Code "${roomDetails.joinCode}" copied!`);
+    showToast(`Code "${roomDetails.joinCode}" copied!`, 'success');
   };
 
-  // ── LOBBY VIEW (Room is WAITING or ENDED) ──
+  // ── Lobby / Ended screen ──────────────────────────────────────────────────
   if (roomStatus === 'WAITING' || roomStatus === 'ENDED') {
     return (
       <div className="lobby-overlay">
+        {/* Toast is visible inside the lobby too */}
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
         <div className="lobby-card">
-          <h2>Lobby: {roomDetails.name}</h2>
+          <div className="lobby-badge">{roomStatus === 'ENDED' ? 'ENDED' : 'LOBBY'}</div>
+          <h2>{roomDetails.name}</h2>
+
           {userRole === 'ADMIN' ? (
             <>
-              <p>You are the Admin. The room is currently paused.</p>
-              <div className="code-display" style={{ marginBottom: '20px' }}>
+              <p className="lobby-hint">Share this code so members can join:</p>
+              <div className="code-display">
                 <span className="join-code-big">{roomDetails.joinCode}</span>
-                <button className="copy-btn" onClick={copyCode}>📋 Copy Code</button>
+                <button className="copy-btn" onClick={copyCode}>📋 Copy</button>
               </div>
-              <button className="start-btn" onClick={handleStart}>🚀 Start Session</button>
+              <button className="start-btn" onClick={handleStart}>
+                {roomStatus === 'ENDED' ? '🔄 Restart Session' : '🚀 Start Session'}
+              </button>
             </>
           ) : (
             <div className="waiting-mode">
-              <p>Waiting for the Admin to start the session...</p>
+              <div className="spinner" />
+              <p>Waiting for the Admin to start the session…</p>
             </div>
           )}
+
+          <button className="lobby-leave-btn" onClick={() => navigate('/my-rooms')}>
+            ← Back to My Rooms
+          </button>
         </div>
       </div>
     );
   }
 
-  // ── WORKSPACE VIEW (Room is ACTIVE) ──
+  // ── Active workspace ──────────────────────────────────────────────────────
   return (
     <div className="workspace">
-      {/* SIDEBAR */}
+      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
       <div className="sidebar">
         <div className="sidebar-header">
-          <h3>{roomDetails.name}</h3>
+          <h3 className="room-title-sidebar" title={roomDetails.name}>{roomDetails.name}</h3>
           <span className={`role-badge ${userRole.toLowerCase()}`}>{userRole}</span>
         </div>
 
-        {/* Admin's View Code Button */}
         {userRole === 'ADMIN' && (
           <div className="sidebar-section">
             <button className="toggle-code-btn" onClick={() => setShowCode(!showCode)}>
               {showCode ? '🙈 Hide Code' : '👁 Show Join Code'}
             </button>
             {showCode && (
-              <div className="code-display-small" style={{ marginTop: '10px' }}>
+              <div className="code-display-small">
                 <span>{roomDetails.joinCode}</span>
                 <button className="copy-btn-small" onClick={copyCode}>📋</button>
               </div>
@@ -157,32 +268,55 @@ const Room = () => {
         )}
 
         <hr className="sidebar-divider" />
-        
-        {/* Leaving vs Closing */}
+
+        <div className="view-switcher">
+          <button
+            className={`view-tab ${activeView === 'whiteboard' ? 'active' : ''}`}
+            onClick={() => setActiveView('whiteboard')}
+          >
+            🖊 Whiteboard
+          </button>
+          <button
+            className={`view-tab ${activeView === 'members' ? 'active' : ''}`}
+            onClick={() => setActiveView('members')}
+          >
+            👥 Members ({members.length})
+          </button>
+        </div>
+
+        <hr className="sidebar-divider" />
+
         <button className="leave-btn" onClick={() => navigate('/my-rooms')}>🚪 Leave Room</button>
+
         {userRole === 'ADMIN' && (
           <div className="danger-zone">
+            <p className="danger-label">Admin Controls</p>
             <button className="danger-btn" onClick={handleCloseAll}>🔴 Close Room for All</button>
           </div>
         )}
 
         <hr className="sidebar-divider" />
 
-        {/* Member List & Promotion */}
         <div className="members-section">
           <h4>👥 Members ({members.length})</h4>
           <ul className="members-list">
-            {members.map(member => (
+            {members.map((member) => (
               <li key={member.id} className="member-item">
                 <div className="member-row">
                   <span className="member-name">{member.username}</span>
                   <span className={`role-badge-sm ${member.role.toLowerCase()}`}>{member.role}</span>
                 </div>
-                {/* Promote Button (Only Admin sees it, only works on Members) */}
-                {userRole === 'ADMIN' && member.role === 'MEMBER' && (
-                  <button className="promote-btn" onClick={() => handlePromote(member.id)}>
-                    ⭐ Promote to Contributor
-                  </button>
+                {userRole === 'ADMIN' && member.role !== 'ADMIN' && (
+                  <div className="member-actions">
+                    {member.role === 'MEMBER' && (
+                      <button className="promote-btn" onClick={() => handlePromote(member.id)}>
+                        ⭐ Make Contributor
+                      </button>
+                    )}
+                    <button className="remove-btn" onClick={() => handleRemove(member.id, member.username)}>
+                      ✕ Remove
+                    </button>
+                  </div>
                 )}
               </li>
             ))}
@@ -190,9 +324,38 @@ const Room = () => {
         </div>
       </div>
 
-      {/* WHITEBOARD */}
       <div className="canvas-container">
-        <SharedWhiteboard roomId={roomId} canDraw={canDraw} />
+        {activeView === 'whiteboard' && (
+          <SharedWhiteboard roomId={roomId} canDraw={canDraw} />
+        )}
+        {activeView === 'members' && (
+          <div className="members-fullview">
+            <h2>Room Members</h2>
+            <div className="members-fullgrid">
+              {members.map((member) => (
+                <div key={member.id} className="member-card">
+                  <div className="member-card-avatar">{member.username.charAt(0).toUpperCase()}</div>
+                  <div className="member-card-info">
+                    <span className="member-card-name">{member.username}</span>
+                    <span className={`role-badge-sm ${member.role.toLowerCase()}`}>{member.role}</span>
+                  </div>
+                  {userRole === 'ADMIN' && member.role !== 'ADMIN' && (
+                    <div className="member-card-actions">
+                      {member.role === 'MEMBER' && (
+                        <button className="promote-btn" onClick={() => handlePromote(member.id)}>
+                          ⭐ Make Contributor
+                        </button>
+                      )}
+                      <button className="remove-btn" onClick={() => handleRemove(member.id, member.username)}>
+                        ✕ Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

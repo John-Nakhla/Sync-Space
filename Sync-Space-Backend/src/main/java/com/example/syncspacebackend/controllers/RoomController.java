@@ -17,8 +17,6 @@ public class RoomController {
     private final RoomService roomService;
     private final SimpMessagingTemplate messaging;
 
-    // --- STATIC ROUTES MUST COME FIRST ---
-    
     @GetMapping("/my-rooms")
     public ResponseEntity<List<UserRoomResponse>> getMyRooms() {
         return ResponseEntity.ok(roomService.getAuthenticatedUserRooms());
@@ -34,8 +32,6 @@ public class RoomController {
         return ResponseEntity.ok(roomService.joinRoomByCode(joinCode));
     }
 
-    // --- DYNAMIC ROUTES AFTER ---
-    
     @GetMapping("/{roomId}")
     public ResponseEntity<Room> getRoom(@PathVariable Long roomId) {
         return ResponseEntity.ok(roomService.getRoomForEntry(roomId));
@@ -72,6 +68,15 @@ public class RoomController {
         roomService.promoteParticipant(roomId, userId);
         messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of(
             "type", "ROLE_UPDATED", "roomId", roomId, "userId", userId
+        ));
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{roomId}/remove/{userId}")
+    public ResponseEntity<Void> removeUser(@PathVariable Long roomId, @PathVariable Long userId) {
+        roomService.removeParticipant(roomId, userId);
+        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of(
+            "type", "KICK_SIGNAL", "roomId", roomId, "userId", userId
         ));
         return ResponseEntity.ok().build();
     }

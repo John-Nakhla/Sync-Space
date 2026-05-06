@@ -15,22 +15,39 @@ const MyRooms = () => {
 
   const navigate = useNavigate();
 
-  const fetchRooms = async () => {
+  // Added 'isSilent' so the loading spinner doesn't flash every 3 seconds
+  const fetchRooms = async (isSilent = false) => {
     try {
       const token = localStorage.getItem('token');
-      if (!token) return;
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+      if (!isSilent) setLoading(true); 
+
       const res = await axios.get('http://localhost:8080/api/rooms/my-rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(res.data);
     } catch (err) {
-      console.error('Failed to load rooms');
+      if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+        localStorage.removeItem('token');
+        alert('Your session has expired. Please log in again.');
+        navigate('/login');
+      }
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchRooms(); }, []);
+  // Auto-refresh the dashboard every 3 seconds so Members see the button unlock instantly
+  useEffect(() => {
+    fetchRooms(false); // Initial load with spinner
+    const interval = setInterval(() => {
+      fetchRooms(true); // Silent background check
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -41,10 +58,10 @@ const MyRooms = () => {
         { name: newRoomName, description: newRoomDesc },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setCreatedRoom(res.data); // Stores the room immediately to show the code
+      setCreatedRoom(res.data); 
       setNewRoomName('');
       setNewRoomDesc('');
-      fetchRooms();
+      fetchRooms(true);
     } catch {
       alert('Failed to create room.');
     }
@@ -54,16 +71,36 @@ const MyRooms = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post(
+      await axios.post(
         `http://localhost:8080/api/rooms/join/${joinCode.trim().toUpperCase()}`,
         {}, { headers: { Authorization: `Bearer ${token}` } }
       );
+      
       setJoinCode('');
       setActiveAction('none');
-      fetchRooms();
-      navigate(`/room/${res.data.id}`, { state: { role: 'MEMBER' } });
+      fetchRooms(true);
+      alert('Room joined! It is now listed below. You can enter once the Admin starts the session.');
     } catch (err) {
       alert(err.response?.data?.message || 'Invalid code or room is closed.');
+    }
+  };
+
+  // ONE-CLICK START: If Admin clicks "Start" on dashboard, fire the API immediately
+  const handleAdminStart = async (roomId, currentStatus) => {
+    try {
+      const endpoint = currentStatus === 'ENDED' ? 'restart' : 'start';
+      const token = localStorage.getItem('token');
+      
+      await axios.post(`http://localhost:8080/api/rooms/${roomId}/${endpoint}`, {}, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+
+      // After starting, push them straight into the room
+      navigate(`/room/${roomId}`, { state: { role: 'ADMIN' } });
+    } catch (err) {
+      alert('Failed to start the room. ' + (err.response?.data?.message || ''));
+      // If it fails, navigate to the Lobby anyway so they can try again manually
+      navigate(`/room/${roomId}`, { state: { role: 'ADMIN' } });
     }
   };
 
@@ -89,7 +126,6 @@ const MyRooms = () => {
       </div>
 
       <div className={`dropdown-container ${activeAction !== 'none' ? 'open' : ''}`}>
-        {/* Create Form */}
         {activeAction === 'create' && !createdRoom && (
           <form className="action-form" onSubmit={handleCreate}>
             <h3>Create a New Space</h3>
@@ -101,7 +137,6 @@ const MyRooms = () => {
           </form>
         )}
 
-        {/* Immediate Code Display after Creation */}
         {activeAction === 'create' && createdRoom && (
           <div className="action-form" style={{ textAlign: 'center' }}>
             <h3>🎉 Room Created!</h3>
@@ -110,13 +145,13 @@ const MyRooms = () => {
               <span className="join-code-big">{createdRoom.joinCode}</span>
               <button className="copy-btn" onClick={() => copyCode(createdRoom.joinCode)}>📋 Copy</button>
             </div>
+            {/* Enter Lobby Button for newly created rooms */}
             <button className="submit-btn" style={{ marginTop: '10px' }} onClick={() => navigate(`/room/${createdRoom.id}`, { state: { role: 'ADMIN' } })}>
               Enter Lobby →
             </button>
           </div>
         )}
 
-        {/* Join Form */}
         {activeAction === 'join' && (
           <form className="action-form" onSubmit={handleJoin}>
             <h3>Join an Existing Space</h3>
@@ -128,40 +163,45 @@ const MyRooms = () => {
         )}
       </div>
 
-      {/* Rooms Grid */}
       <div className="rooms-grid">
-        {rooms.map((room) => (
-          <div key={room.roomId} className="room-card">
-            <div className="room-info">
-              <h2>{room.roomName}</h2>
-              {room.role === 'ADMIN' && (
-                <div className="card-code-row">
-                  <span className="card-code">{room.joinCode}</span>
-                  <button className="copy-btn-small" onClick={() => copyCode(room.joinCode)}>📋</button>
-                </div>
-              )}
+        {rooms.map((room) => {
+          const currentRoomId = room.roomId || room.id; 
+
+          return (
+            <div key={currentRoomId} className="room-card">
+              <div className="room-info">
+                <h2>{room.roomName || room.name}</h2>
+                {room.role === 'ADMIN' && (
+                  <div className="card-code-row">
+                    <span className="card-code">{room.joinCode}</span>
+                    <button className="copy-btn-small" onClick={() => copyCode(room.joinCode)}>📋</button>
+                  </div>
+                )}
+              </div>
+              <div className="room-footer">
+                <span className={`role-badge ${room.role.toLowerCase()}`}>{room.role}</span>
+                <span className={`status-badge status-${room.status.toLowerCase()}`}>{room.status}</span>
+                
+                {/* 1. ADMIN START BUTTON: Instantly calls the API to activate the room */}
+                {room.role === 'ADMIN' && (room.status === 'WAITING' || room.status === 'ENDED') ? (
+                  <button className="start-button" onClick={() => handleAdminStart(currentRoomId, room.status)}>
+                    🚀 Start Session
+                  </button>
+                ) : room.status === 'ACTIVE' ? (
+                  /* 2. MEMBER ENTER BUTTON: Will magically appear when the Admin starts the room thanks to auto-refresh */
+                  <button className="enter-button" onClick={() => navigate(`/room/${currentRoomId}`, { state: { role: room.role } })}>
+                    Enter Room
+                  </button>
+                ) : (
+                  /* 3. MEMBER WAITING STATE */
+                  <button className="disabled-button" disabled title="Waiting for Admin to start">
+                    🔒 Waiting...
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="room-footer">
-              <span className={`role-badge ${room.role.toLowerCase()}`}>{room.role}</span>
-              <span className={`status-badge status-${room.status.toLowerCase()}`}>{room.status}</span>
-              
-              {/* Conditional Buttons based on Role & Status */}
-              {room.role === 'ADMIN' && (room.status === 'WAITING' || room.status === 'ENDED') ? (
-                <button className="start-button" onClick={() => navigate(`/room/${room.roomId}`, { state: { role: 'ADMIN' } })}>
-                  🚀 Start Session
-                </button>
-              ) : room.status === 'ACTIVE' ? (
-                <button className="enter-button" onClick={() => navigate(`/room/${room.roomId}`, { state: { role: room.role } })}>
-                  Enter Room
-                </button>
-              ) : (
-                <button className="disabled-button" disabled title="Waiting for Admin to start">
-                  🔒 Waiting...
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
