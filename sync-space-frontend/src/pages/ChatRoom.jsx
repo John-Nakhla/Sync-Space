@@ -1,212 +1,241 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { fetchInitialHistory, fetchCatchUp, createWebSocketClient } from '../services/chatService';
-// Import the new service methods
-import { fetchRoomInfo, pauseRoomAction, resumeRoomAction } from '../services/roomService';
+import {
+    fetchInitialHistory,
+    fetchCatchUp,
+    createWebSocketClient
+} from '../services/chatService';
+
+import {
+    fetchRoomInfo,
+    pauseRoomAction,
+    resumeRoomAction
+} from '../services/roomService';
+
 import ChatMessage from '../components/ChatMessage';
-import './ChatRoom.css';
 import ChatInput from '../components/ChatInput';
+import './ChatRoom.css';
 import { jwtDecode } from 'jwt-decode';
+import axios from 'axios';
 
 const ChatRoom = () => {
     const { roomId } = useParams();
     const navigate = useNavigate();
 
     const [messages, setMessages] = useState([]);
-    const [stompClient, setStompClient] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
+
+    const [stompClient, setStompClient] = useState(null);
     const [replyTo, setReplyTo] = useState(null);
     const [lastSeenId, setLastSeenId] = useState(null);
     const [roomStatus, setRoomStatus] = useState("ACTIVE");
     const [ownerId, setOwnerId] = useState(null);
 
     const scrollRef = useRef();
+    const containerRef = useRef();
 
     const token = localStorage.getItem('token');
     const decoded = token ? jwtDecode(token) : null;
+
     const currentUserId = decoded?.userId;
     const currentUser = decoded?.sub || "Guest";
+
     const isAdmin = ownerId === currentUserId;
 
-    // ================= RESTORE lastSeenId =================
+    // ================= LOAD INITIAL =================
     useEffect(() => {
-        const saved = localStorage.getItem(`lastSeen_${roomId}`);
-        if (saved) setLastSeenId(saved);
-    }, [roomId]);
-
-    // ================= LOAD ROOM INFO (Using Service) =================
-    const loadRoomInfoData = async () => {
-        try {
-            const data = await fetchRoomInfo(roomId);
-            setOwnerId(data.ownerId);
-            setRoomStatus(data.status);
-        } catch (err) {
-            console.error("Failed to load room info", err);
-        }
-    };
-
-    // ================= FETCH + CONNECT =================
-    useEffect(() => {
-        const loadHistory = async () => {
+        const load = async () => {
             try {
                 const res = await fetchInitialHistory(roomId);
-                setMessages(res.data.reverse());
+                const msgs = res.data.reverse();
+                setMessages(msgs);
+
+                if (msgs.length < 20) setHasMore(false);
             } catch (err) {
-                console.error("Failed to load chat history:", err);
-                if (err.response?.status === 403) navigate('/login');
+                console.error(err);
             } finally {
                 setLoading(false);
             }
         };
 
-        loadHistory();
-        loadRoomInfoData(); 
+        load();
+    }, [roomId]);
 
+    // ================= ROOM INFO =================
+    useEffect(() => {
+        const loadRoomInfo = async () => {
+            const data = await fetchRoomInfo(roomId);
+            setOwnerId(data.ownerId);
+            setRoomStatus(data.status);
+        };
+
+        loadRoomInfo();
+    }, [roomId]);
+
+    // ================= WEBSOCKET =================
+    useEffect(() => {
         const client = createWebSocketClient();
 
-        client.onConnect = async () => {
-            if (lastSeenId) {
-                try {
-                    const res = await fetchCatchUp(roomId, lastSeenId);
-                    if (res.data.length > 0) {
-                        setMessages(prev => {
-                            const existingIds = new Set(prev.map(m => m.id));
-                            const newMsgs = res.data.filter(m => !existingIds.has(m.id));
-                            return [...prev, ...newMsgs];
-                        });
-                        const lastMsg = res.data[res.data.length - 1];
-                        if (lastMsg.redisId) setLastSeenId(lastMsg.redisId);
-                    }
-                } catch (err) {
-                    console.error("Catch-up failed:", err);
-                }
-            }
+        client.onConnect = () => {
 
             client.subscribe(`/topic/room.${roomId}`, (payload) => {
-                const newMessage = JSON.parse(payload.body);
+                const msg = JSON.parse(payload.body);
+
                 setMessages(prev => {
-                    if (prev.some(m => m.id === newMessage.id)) return prev;
-                    return [...prev, newMessage];
+                    if (prev.some(m => m.id === msg.id)) return prev;
+                    return [...prev, msg];
                 });
-                if (newMessage.redisId) setLastSeenId(newMessage.redisId);
             });
 
             client.subscribe(`/topic/rooms/${roomId}`, (payload) => {
                 const data = JSON.parse(payload.body);
                 if (data.status) setRoomStatus(data.status);
-                if (data.ownerId) setOwnerId(data.ownerId);
             });
         };
 
         client.activate();
         setStompClient(client);
 
-        return () => {
-            if (client) client.deactivate();
-        };
+        return () => client.deactivate();
     }, [roomId]);
 
-    // ================= SAVE lastSeenId =================
+    // ================= CATCHUP =================
     useEffect(() => {
-        if (lastSeenId) {
-            localStorage.setItem(`lastSeen_${roomId}`, lastSeenId);
-        }
-    }, [lastSeenId, roomId]);
+        const runCatchUp = async () => {
+            if (!lastSeenId) return;
 
-    // ================= AUTO SCROLL =================
+            const res = await fetchCatchUp(roomId, lastSeenId);
+
+            if (res.data.length > 0) {
+                setMessages(prev => {
+                    const ids = new Set(prev.map(m => m.id));
+                    const filtered = res.data.filter(m => !ids.has(m.id));
+                    return [...prev, ...filtered];
+                });
+
+                setLastSeenId(res.data[res.data.length - 1].redisId);
+            }
+        };
+
+        runCatchUp();
+    }, [roomId]);
+
+    // ================= SCROLL TO BOTTOM =================
     useEffect(() => {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // ================= SEND =================
-    const handlePublish = (content) => {
-        if (roomStatus !== "ACTIVE") return;
+    // ================= LOAD OLDER (IMPORTANT FIX) =================
+    const loadOlderMessages = async () => {
+        if (loadingOlder || !hasMore || messages.length === 0) return;
 
-        if (stompClient?.connected) {
-            const messageData = {
-                content,
-                sender: currentUser,
-                senderId: currentUserId,
-                parentId: replyTo?.id || null,
-                createdAt: new Date().toISOString()
-            };
+        setLoadingOlder(true);
 
-            stompClient.publish({
-                destination: `/app/chat/${roomId}`,
-                body: JSON.stringify(messageData),
-                headers: { Authorization: `Bearer ${token}` }
+        const oldest = messages[0];
+        const token = localStorage.getItem("token");
+
+        try {
+            const res = await axios.get(
+                `http://localhost:8080/api/chat/history/${roomId}/more`,
+                {
+                    params: {
+                        before: oldest.createdAt,
+                        size: 20
+                    },
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
+            );
+
+            const older = res.data;
+
+            if (older.length === 0) {
+                setHasMore(false);
+                return;
+            }
+
+            setMessages(prev => {
+                const ids = new Set(prev.map(m => m.id));
+                const filtered = older.filter(m => !ids.has(m.id));
+
+                return [...filtered.reverse(), ...prev];
             });
-            setReplyTo(null);
-        }
-    };
 
-    // ================= ADMIN ACTIONS (Using Service) =================
-    const handlePause = async () => {
-        try {
-            await pauseRoomAction(roomId);
-            // Status will be updated via WebSocket subscription
         } catch (err) {
-            console.error("Error pausing room", err);
+            console.error("Failed to load older messages:", err);
+        } finally {
+            setLoadingOlder(false);
         }
     };
 
-    const handleResume = async () => {
-        try {
-            await resumeRoomAction(roomId);
-            // Status will be updated via WebSocket subscription
-        } catch (err) {
-            console.error("Error resuming room", err);
+    // ================= SCROLL DETECT =================
+    const handleScroll = () => {
+        const top = containerRef.current.scrollTop;
+
+        if (top === 0) {
+            loadOlderMessages();
         }
     };
 
-    const findMessageById = (id) => messages.find(m => m.id === id);
+    // ================= SEND =================
+    const handlePublish = (message) => {
+        if (!stompClient?.connected) return;
 
-    if (loading) return <div>Connecting...</div>;
+        const msg = {
+            content: message.content,
+            fileUrl: message.fileUrl || null,
+            sender: currentUser,
+            senderId: currentUserId,
+            parentId: replyTo?.id || null,
+            createdAt: new Date().toISOString()
+        };
+
+        stompClient.publish({
+            destination: `/app/chat/${roomId}`,
+            body: JSON.stringify(msg),
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        setReplyTo(null);
+    };
+
+    if (loading) return <div>Loading...</div>;
 
     return (
         <div className="chat-container">
-            <header className="chat-header">
-                <button onClick={() => navigate('/my-rooms')}>← Back</button>
-                <h2 className='room_number'>Room #{roomId}</h2>
 
-                {isAdmin && (
-                    <div className="admin-controls">
-                        {roomStatus === "ACTIVE" ? (
-                            <button className="pause-btn" onClick={handlePause}>⏸ Pause</button>
-                        ) : (
-                            <button className="resume-btn" onClick={handleResume}>▶ Resume</button>
-                        )}
-                    </div>
-                )}
+            <header className="chat-header">
+                <button onClick={() => navigate('/my-rooms')}>Back</button>
+                <h2>Room #{roomId}</h2>
             </header>
 
-            {roomStatus !== "ACTIVE" && (
-                <div className="room-paused-banner">🚫 Room is paused by admin</div>
-            )}
+            <main
+                className="messages-area"
+                ref={containerRef}
+                onScroll={handleScroll}
+            >
+                {loadingOlder && <div>Loading older messages...</div>}
 
-            <main className="messages-area">
-                {messages.map((msg, index) => (
+                {messages.map((msg) => (
                     <ChatMessage
-                        key={msg.id || index}
+                        key={msg.id}
                         msg={msg}
-                        parentMsg={findMessageById(msg.parentId)}
                         isMine={msg.senderId === currentUserId}
+                        parentMsg={messages.find(m => m.id === msg.parentId)}
                         onReply={() => setReplyTo(msg)}
                     />
                 ))}
+
                 <div ref={scrollRef} />
             </main>
 
-            {replyTo && (
-                <div className="reply-preview">
-                    <div><strong>{replyTo.sender}</strong>: {replyTo.content}</div>
-                    <button onClick={() => setReplyTo(null)}>✕</button>
-                </div>
-            )}
-
             <footer className="chat-footer">
-                <ChatInput onSendMessage={handlePublish} disabled={roomStatus !== "ACTIVE"} />
+                <ChatInput onSendMessage={handlePublish} />
             </footer>
+
         </div>
     );
 };

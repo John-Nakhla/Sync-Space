@@ -186,3 +186,42 @@
 .reply-btn:active {
     transform: scale(0.96);
 }
+
+/* =========================
+   MESSAGE TEXT
+========================= */
+.message-text {
+    margin-bottom: 6px;
+}
+
+/* =========================
+   FILE CONTAINER
+========================= */
+.file-container {
+    margin-top: 6px;
+}
+
+/* IMAGE PREVIEW */
+.image-preview {
+    max-width: 220px;
+    max-height: 180px;
+    border-radius: 10px;
+    display: block;
+    cursor: pointer;
+}
+
+/* FILE LINK */
+.file-link {
+    display: inline-block;
+    font-size: 13px;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(127, 119, 221, 0.15);
+    color: #534AB7;
+    transition: 0.2s;
+}
+
+.file-link:hover {
+    background: rgba(127, 119, 221, 0.25);
+}
