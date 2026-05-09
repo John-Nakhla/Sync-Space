@@ -52,7 +52,7 @@ public class WhiteboardService {
 
         // ── Step 3: Load latest snapshot (may be empty for new rooms) ─────────
         Optional<WhiteboardSnapshot> latestSnapshot =
-                snapshotRepository.findLatestByRoomId(roomId);
+                snapshotRepository.findTopByIdRoomIdOrderByIdVersionDesc(roomId);
 
         // The version the snapshot covers. If no snapshot exists yet, use 0
         // so that the delta query fetches ALL updates from the beginning.
@@ -68,7 +68,10 @@ public class WhiteboardService {
 
         // ── Step 4: Load delta updates after the snapshot ─────────────────────
         List<WhiteboardUpdate> deltas =
-                updateRepository.findDeltaUpdates(roomId, snapshotVersion);
+                updateRepository.findByIdRoomIdAndIdVersionGreaterThanOrderByIdVersionAsc(
+                        roomId,
+                        snapshotVersion
+                );
 
         // Encode each binary update to Base64 — same reason as snapshot above.
         List<String> deltaUpdates = deltas.stream()

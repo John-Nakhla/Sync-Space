@@ -17,4 +17,5 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
     // NEW: Find participant by Room and the User's ID (Required for Promotion)
     Optional<RoomParticipant> findByRoomAndUserId(Room room, Long userId);
     boolean existsByRoomAndUser(Room room, User user);
+    boolean existsByUserIdAndRoomId(Long userId, Long roomId);
 }

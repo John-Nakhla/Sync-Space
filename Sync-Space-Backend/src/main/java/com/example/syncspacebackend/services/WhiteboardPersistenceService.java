@@ -2,64 +2,81 @@ package com.example.syncspacebackend.services;
 
 import com.example.syncspacebackend.models.Room;
 import com.example.syncspacebackend.models.User;
+import com.example.syncspacebackend.models.WhiteboardSnapshot;
 import com.example.syncspacebackend.models.WhiteboardUpdate;
+import com.example.syncspacebackend.repositories.RoomWhiteboardVersionRepository;
 import com.example.syncspacebackend.repositories.WhiteboardSnapshotRepository;
 import com.example.syncspacebackend.repositories.WhiteboardUpdateRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
 public class WhiteboardPersistenceService {
 
-    @Autowired
-    private WhiteboardUpdateRepository updateRepo;
+    private final WhiteboardUpdateRepository updateRepo;
+    private final WhiteboardSnapshotRepository snapshotRepo;
+    private final RoomWhiteboardVersionRepository versionRepo;  // ← fixes the version bug
 
-    @Autowired
-    private WhiteboardSnapshotRepository snapshotRepo;
-
-    // 1. SAVE AN UPDATE: Call this when your WebSocket receives binary data from a user
+    // ── Save a single YJS update ──────────────────────────────────────────────
+    // Called by the WebSocket handler every time a contributor sends a binary
+    // YJS update. Atomically assigns the next version number then persists.
     @Transactional
-    public void saveUpdate(Room room, User user, byte[] updateData) {
-        // Find the current highest version for this room to increment it
-        // (In a highly concurrent production app, you might use a database sequence or Redis for this)
-        Long nextVersion = getNextVersionNumberForRoom(room.getId()); 
-        
+    public Long saveUpdate(Room room, User user, byte[] updateData) {
+        // Atomically increment — two concurrent updates ALWAYS get different numbers
+        Long nextVersion = versionRepo.incrementAndGet(room.getId());
+
         WhiteboardUpdate newUpdate = new WhiteboardUpdate(room, user, nextVersion, updateData);
         updateRepo.save(newUpdate);
-        
-        // Optional: If nextVersion reaches 50 or 100, trigger a background task to create a WhiteboardSnapshot
+
+        return nextVersion; // returned so the WebSocket handler can broadcast it
     }
 
-    // 2. LOAD THE BOARD: Call this when a user first connects to the room
+    // ── Load full board state for a joining user ──────────────────────────────
+    // Returns all byte arrays the client needs to reconstruct the board:
+    //   index 0        = snapshot bytes (may be empty array if no snapshot)
+    //   index 1..N     = delta update bytes in version order
+    //
+    // The WebSocket handler sends these to the newly joined client.
+    // The client applies them in order: Y.applyUpdate(ydoc, bytes[i])
     @Transactional(readOnly = true)
-    public byte[] getFullBoardState(Long roomId) {
-        // Step A: Look for the latest snapshot
-        var latestSnapshot = snapshotRepo.findTopByIdRoomIdOrderByIdVersionDesc(roomId);
-        
-        // Step B: Load the updates
-        List<WhiteboardUpdate> recentUpdates;
+    public List<byte[]> getFullBoardState(Long roomId) {
+        List<byte[]> result = new ArrayList<>();
+
+        // Step A: latest snapshot — if present, add it first
+        Optional<WhiteboardSnapshot> latestSnapshot =
+                snapshotRepo.findTopByIdRoomIdOrderByIdVersionDesc(roomId);
+
+        long afterVersion = 0L;
         if (latestSnapshot.isPresent()) {
-            // Load only updates that happened AFTER the snapshot
-            recentUpdates = updateRepo.findByIdRoomIdAndIdVersionGreaterThanOrderByIdVersionAsc(
-                roomId, 
-                latestSnapshot.get().getVersion()
-            );
-            // NOTE: You will need to send the snapshot bytes AND the update bytes to your frontend
-        } else {
-            // No snapshot exists, load ALL updates since the room was created
-            recentUpdates = updateRepo.findByIdRoomIdOrderByIdVersionAsc(roomId);
+            result.add(latestSnapshot.get().getSnapshotData());
+            afterVersion = latestSnapshot.get().getVersion();
         }
-        
-        // At this point, you will serialize these byte[] arrays and send them over the WebSocket
-        // so the React frontend can run Y.applyUpdate()
-        return null; // Replace with actual combined byte array
+
+        // Step B: all updates after the snapshot (or all updates if no snapshot)
+        List<WhiteboardUpdate> deltas =
+                updateRepo.findByIdRoomIdAndIdVersionGreaterThanOrderByIdVersionAsc(
+                        roomId, afterVersion
+                );
+
+        deltas.forEach(u -> result.add(u.getUpdateData()));
+
+        return result; // WebSocket handler iterates and sends each byte[] to client
     }
-    
-    private Long getNextVersionNumberForRoom(Long roomId) {
-        // Implementation to safely get the next sequence number
-        return System.currentTimeMillis(); // Placeholder
+
+    // ── Save a snapshot ───────────────────────────────────────────────────────
+    // Called by the snapshot scheduler (every 100 updates or on a timer).
+    // snapshotData = Y.encodeStateAsUpdate(serverYDoc)
+    // currentVersion = the latest version number at the moment of snapshotting
+    @Transactional
+    public void saveSnapshot(Room room, byte[] snapshotData, Long currentVersion) {
+        WhiteboardSnapshot snapshot =
+                new WhiteboardSnapshot(room, snapshotData, currentVersion);
+        snapshotRepo.save(snapshot);
     }
 }
