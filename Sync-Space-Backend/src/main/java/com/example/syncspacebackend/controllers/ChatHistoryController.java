@@ -11,6 +11,7 @@ import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -29,20 +30,15 @@ public class ChatHistoryController {
     @GetMapping("/history/{roomId}/more")
     public List<ChatMessage> getOlderMessages(
             @PathVariable Long roomId,
-            @RequestParam String before, // The timestamp of the oldest message currently on screen
+            @RequestParam String before,
             @RequestParam(defaultValue = "20") int size
     ) {
-        // 1. Convert the String timestamp from the frontend to LocalDateTime
-        LocalDateTime lastTimestamp = LocalDateTime.parse(before);
+        Instant lastTimestamp = Instant.parse(before);
 
-        // 2. Create a Pageable object (Page 0, because we are using a cursor, not an offset)
-        PageRequest pageRequest = PageRequest.of(0, size);
-
-        // 3. Fetch messages older than the current oldest message
         return chatRepository.findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc(
                 roomId,
                 lastTimestamp,
-                pageRequest
+                PageRequest.of(0, size)
         );
     }
     @GetMapping("/history/{roomId}")

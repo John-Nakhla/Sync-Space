@@ -52,6 +52,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         // ✅ Allow WebSocket handshake and SockJS info endpoints
+                        .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
