@@ -2,7 +2,6 @@ package com.example.syncspacebackend.models;
 
 import jakarta.persistence.*;
 import lombok.Getter;
-
 import java.time.LocalDateTime;
 
 @Getter
@@ -24,7 +23,8 @@ public class WhiteboardUpdate {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;                       // contributor who produced this update
 
-    @Lob
+    // Bug fix: @Lob on byte[] maps to PostgreSQL oid in Hibernate 6, not bytea.
+    // columnDefinition = "BYTEA" already handles the correct mapping — @Lob removed.
     @Column(name = "update_data", nullable = false, columnDefinition = "BYTEA")
     private byte[] updateData;              // raw YJS binary update (Y.encodeUpdate)
 

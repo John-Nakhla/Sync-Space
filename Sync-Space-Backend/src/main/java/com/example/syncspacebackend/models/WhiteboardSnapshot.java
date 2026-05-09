@@ -17,7 +17,7 @@ public class WhiteboardSnapshot {
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
 
-    @Lob
+    // Bug fix: same as WhiteboardUpdate — @Lob removed, columnDefinition = "BYTEA" is sufficient
     @Column(name = "snapshot_data", nullable = false, columnDefinition = "BYTEA")
     private byte[] snapshotData;
 

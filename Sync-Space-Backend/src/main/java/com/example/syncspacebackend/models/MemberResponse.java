@@ -7,11 +7,8 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class UserRoomResponse {
-    private Long roomId;
-    private String roomName;
-    private String roomDescription;
-    private String joinCode;
-    private String status;
+public class MemberResponse {
+    private Long id;
+    private String username;
     private String role;
 }
