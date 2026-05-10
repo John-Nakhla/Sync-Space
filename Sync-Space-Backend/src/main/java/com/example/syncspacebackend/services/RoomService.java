@@ -192,7 +192,8 @@ public class RoomService {
         return new RoomDto(
                 room.getId(),
                 room.getOwner().getId(),
-                room.getStatus().name()
+                room.getStatus().name(),
+                room.getName()
         );
     }
 }
