@@ -208,7 +208,7 @@ const ChatRoom = () => {
         <div className="chat-container">
 
             <header className="chat-header">
-                <button onClick={() => navigate('/my-rooms')}>Back</button>
+                <button  className="back-button" onClick={() => navigate('/my-rooms')}>Back</button>
 
                 <div className="chat-header-info">
                     <h2 className="chat-header-name">
