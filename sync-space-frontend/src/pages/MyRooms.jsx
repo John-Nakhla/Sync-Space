@@ -25,7 +25,7 @@ const MyRooms = () => {
     }, []);
 
     const handleEnterRoom = (roomId) => {
-        navigate(`/chat/${roomId}`);
+navigate(`/room/${roomId}`);
     };
 
     if (loading) return <div className="status-msg">Loading your spaces...</div>;

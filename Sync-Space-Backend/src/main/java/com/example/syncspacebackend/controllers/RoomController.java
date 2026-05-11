@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -54,5 +55,11 @@ public class RoomController {
     @GetMapping("/{roomId}")
     public RoomDto getRoom(@PathVariable Long roomId) {
         return roomService.getRoomDto(roomId);
+    }
+    
+    // ✅ ADDED: The missing endpoint React is trying to reach!
+    @GetMapping("/{roomId}/members")
+    public ResponseEntity<List<Map<String, Object>>> getRoomMembers(@PathVariable Long roomId) {
+        return ResponseEntity.ok(roomService.getRoomMembers(roomId));
     }
 }

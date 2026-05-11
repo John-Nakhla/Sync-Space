@@ -13,13 +13,16 @@ public class RoomDto {
     private Long ownerId;
     private String status;
     private String name;
+    
+    private String joinCode;
 
     public static RoomDto from(Room room) {
         return new RoomDto(
                 room.getId(),
                 room.getOwner().getId(),
                 room.getStatus().name(),
-                room.getName()
+                room.getName(),
+                room.getJoinCode() 
         );
     }
 }

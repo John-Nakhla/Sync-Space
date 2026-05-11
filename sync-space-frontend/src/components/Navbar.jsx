@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import CreateRoomModal from "./modals/CreateRoomModal";
+import JoinRoomModal from "./modals/JoinRoomModal";
 
 function Navbar() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
-  
-  // State for modals as required by the integration-01 logic
+
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
@@ -85,6 +86,7 @@ function Navbar() {
           margin: 0 6px;
         }
 
+        /* Create Room — filled accent */
         .btn-create {
           display: inline-flex;
           align-items: center;
@@ -109,6 +111,16 @@ function Navbar() {
           box-shadow: 0 4px 20px rgba(110,231,183,0.35);
         }
 
+        .btn-create:active {
+          transform: translateY(0);
+          opacity: 1;
+        }
+
+        .btn-create svg {
+          flex-shrink: 0;
+        }
+
+        /* Join Room — outlined */
         .btn-join {
           display: inline-flex;
           align-items: center;
@@ -133,6 +145,11 @@ function Navbar() {
           transform: translateY(-1px);
         }
 
+        .btn-join:active {
+          transform: translateY(0);
+        }
+
+        /* Logout */
         .btn-logout {
           display: inline-flex;
           align-items: center;
@@ -200,7 +217,6 @@ function Navbar() {
         </div>
       </nav>
 
-      {/* Note: Ensure CreateRoomModal and JoinRoomModal components are imported/defined in your project */}
       {showCreate && <CreateRoomModal onClose={() => setShowCreate(false)} />}
       {showJoin && <JoinRoomModal onClose={() => setShowJoin(false)} />}
     </>

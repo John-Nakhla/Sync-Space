@@ -1,6 +1,5 @@
 package com.example.syncspacebackend.services;
 
-import com.example.syncspacebackend.models.UserRoomResponse;
 import com.example.syncspacebackend.models.*;
 import com.example.syncspacebackend.repositories.*;
 import com.example.syncspacebackend.security.UserPrincipal;
@@ -13,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -192,15 +192,20 @@ public class RoomService {
         return room;
     }
 
-    public RoomDto getRoomDto(Long roomId) {
+public RoomDto getRoomDto(Long roomId) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RuntimeException("Room not found"));
 
-        return new RoomDto(
-                room.getId(),
-                room.getOwner().getId(),
-                room.getStatus().name(),
-                room.getName()
-        );
+        return RoomDto.from(room); 
+    }
+
+    public List<Map<String, Object>> getRoomMembers(Long roomId) {
+        return participantRepository.findAllByRoomId(roomId).stream()
+                .map(p -> Map.<String, Object>of(
+                        "id", p.getUser().getId(),
+                        "username", p.getUser().getUsername(),
+                        "role", p.getRole().name()
+                ))
+                .toList();
     }
 }
