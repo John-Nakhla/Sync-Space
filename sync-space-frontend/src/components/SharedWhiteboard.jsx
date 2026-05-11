@@ -25,6 +25,7 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   const ydocRef         = useRef(null);
   const providerRef     = useRef(null);
   const undoManagerRef  = useRef(null);
+  const isMountedRef    = useRef(true); // ✅ FIX: Track mount state
 
   // UI state
   const [connected,     setConnected]     = useState(false);
@@ -68,13 +69,6 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   useEffect(() => { setCanDraw(initialCanDraw); }, [initialCanDraw]);
 
   // ── Subscribe to STOMP promotion events ───────────────────────────────────
-  //
-  // The backend publishes to /topic/room/{roomId}/promotions when a participant
-  // is promoted to contributor. Message format:
-  //   { userId: number, username: string, newRole: "CONTRIBUTOR" }
-  //
-  // If this user is the one being promoted, show a toast and enable drawing.
-  // For everyone else, update the members list (so the host's UI refreshes).
   useEffect(() => {
     if (!stompClient || !roomId) return;
 
@@ -91,7 +85,8 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
         // If THIS user was promoted → enable drawing + show toast
         if (event.username === username) {
           setCanDraw(true);
-setPromotedMsg("🎉 You've been promoted to contributor! You can now draw.");          setPromoted(true);
+          setPromotedMsg("🎉 You've been promoted to contributor! You can now draw.");
+          setPromoted(true);
           setTimeout(() => setPromoted(false), 5000);
         }
       }
@@ -101,17 +96,15 @@ setPromotedMsg("🎉 You've been promoted to contributor! You can now draw.");  
   }, [stompClient, roomId, username]);
 
   // ── Fetch members list when panel opens ───────────────────────────────────
-useEffect(() => {
+  useEffect(() => {
     if (!showMembers) return;
-    api.get(`/api/rooms/${roomId}/members`)      // ✅ CORRECT
+    api.get(`/api/rooms/${roomId}/members`)
       .then(res => setMembers(res.data))
       .catch(err => console.error('Failed to load members', err));
   }, [showMembers, roomId]);
 
   // ── Promote a member (host only) ──────────────────────────────────────────
-// ── Promote a member (host only) ──────────────────────────────────────────
   const promoteUser = useCallback((userId) => {
-    // ✅ FIX: Use patch and the correct backend URL
     api.patch(`/api/rooms/${roomId}/promote/${userId}`)
       .catch(err => console.error('Promotion failed', err));
       
@@ -122,14 +115,6 @@ useEffect(() => {
   }, [roomId]);
 
   // ── Redraw helper ─────────────────────────────────────────────────────────
-  //
-  // FIX: Use an offscreen canvas for compositing so destination-out (eraser)
-  // works correctly on the dark background. Without this, the eraser cuts
-  // holes through to transparency, which the canvas background then shows as
-  // the background colour rather than erasing the stroke.
-  //
-  // Approach: draw all strokes onto an offscreen canvas with a white fill base,
-  // then blit to the visible canvas. This means eraser = actually removes ink.
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !ydocRef.current) return;
@@ -170,68 +155,99 @@ useEffect(() => {
   }, []);
 
   // ── 1. Initialize Yjs, WebSocket, Awareness ───────────────────────────────
+  // ✅ FIX: Better WebSocket initialization with proper cleanup
   useEffect(() => {
+    isMountedRef.current = true;
     const token   = localStorage.getItem('token');
+    if (!token) {
+      console.error('❌ No auth token found. Cannot connect to whiteboard.');
+      return;
+    }
+
     const myColor = COLORS[Math.floor(Math.random() * COLORS.length)];
 
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    const provider = new WebsocketProvider(
-      'ws://localhost:1234',
-      `room-${roomId}`,
-      ydoc,
-      { params: { room: roomId, token } }
-    );
-    providerRef.current = provider;
+    // ✅ FIX: Use a timeout to prevent race conditions in StrictMode
+    const initTimer = setTimeout(() => {
+      if (!isMountedRef.current) return;
 
-    provider.on('status', ({ status }) => setConnected(status === 'connected'));
-    provider.on('sync', (isSynced) => {
-      if (isSynced) {
-        redraw();
+      try {
+        const provider = new WebsocketProvider(
+          'ws://localhost:1234',
+          `room-${roomId}`,
+          ydoc,
+          { 
+            params: { room: roomId, token },
+            resyncInterval: 5000,
+            maxBackoffTime: 30000,
+          }
+        );
+        
+        if (!isMountedRef.current) {
+          provider.disconnect();
+          return;
+        }
+
+        providerRef.current = provider;
+
+        provider.on('status', ({ status }) => {
+          console.log('📡 WebSocket status:', status);
+          if (isMountedRef.current) {
+            setConnected(status === 'connected');
+          }
+        });
+
+        provider.on('sync', (isSynced) => {
+          if (isSynced && isMountedRef.current) {
+            console.log('✅ Whiteboard synced');
+            redraw();
+          }
+        });
+
+        provider.on('connection-error', (error) => {
+          console.error('❌ WebSocket connection error:', error);
+        });
+
+        const strokes = ydoc.getArray('strokes');
+        undoManagerRef.current = new Y.UndoManager(strokes);
+
+        // ── Awareness: live pointers ────────────────────────────────────────
+        const awareness = provider.awareness;
+        awareness.setLocalStateField('user', {
+          name:   username || 'Anonymous',
+          color:  myColor,
+          cursor: null,
+        });
+
+        awareness.on('change', () => {
+          if (!isMountedRef.current) return;
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+
+          const users = Array.from(awareness.getStates().values())
+            .filter(state =>
+              state.user &&
+              state.user.cursor &&
+              state.user.name !== (username || 'Anonymous')
+            )
+            .map(state => state.user);
+
+          setAwarenessUsers(users);
+        });
+
+        // ── Observe strokes array → redraw ──────────────────────────────────
+        strokes.observe(redraw);
+      } catch (error) {
+        console.error('❌ Error initializing WebSocket:', error);
       }
-    });
-
-    const strokes = ydoc.getArray('strokes');
-    undoManagerRef.current = new Y.UndoManager(strokes);
-
-    // ── Awareness: live pointers ─────────────────────────────────────────────
-    const awareness = provider.awareness;
-    awareness.setLocalStateField('user', {
-      name:   username || 'Anonymous',
-      color:  myColor,
-      // Normalized cursor coords (0–1). Null when off-canvas.
-      cursor: null,
-    });
-
-    awareness.on('change', () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const users = Array.from(awareness.getStates().values())
-        .filter(state =>
-          state.user &&
-          state.user.cursor &&
-          state.user.name !== (username || 'Anonymous')
-        )
-        .map(state => state.user);
-
-      setAwarenessUsers(users);
-    });
-
-    // ── Observe strokes array → redraw ────────────────────────────────────────
-    strokes.observe(redraw);
+    }, 100); // Small delay for StrictMode compatibility
 
     // ── Load persisted state from backend ─────────────────────────────────────
-    //
-    // The backend returns:
-    //   snapshotData  – base64 Yjs state update (the heavy base)
-    //   deltaUpdates  – array of base64 delta updates after the snapshot
-    //
-    // We apply snapshot first, then deltas in order, all in one transaction
-    // so awareness and observers only fire once.
     api.get(`/api/rooms/${roomId}/whiteboard/state`)
       .then(res => {
+        if (!isMountedRef.current) return;
         const { snapshotData, deltaUpdates } = res.data;
         ydoc.transact(() => {
           if (snapshotData) {
@@ -249,9 +265,11 @@ useEffect(() => {
             });
           }
         }, 'backend-load');
-        redraw();
+        if (isMountedRef.current) {
+          redraw();
+        }
       })
-      .catch(() => console.log('No previous whiteboard state (new room).'));
+      .catch(() => console.log('ℹ️ No previous whiteboard state (new room).'));
 
     // ── Resize handler ────────────────────────────────────────────────────────
     const resizeCanvas = () => {
@@ -266,20 +284,40 @@ useEffect(() => {
     window.addEventListener('resize', resizeCanvas);
     setTimeout(resizeCanvas, 100);
 
+    // ✅ FIX: Proper cleanup
     return () => {
+      isMountedRef.current = false;
+      clearTimeout(initTimer);
       window.removeEventListener('resize', resizeCanvas);
-      strokes.unobserve(redraw);
-      provider.destroy();
-      ydoc.destroy();
+      
+      const strokes = ydoc.getArray('strokes');
+      try {
+        strokes.unobserve(redraw);
+      } catch (e) {
+        console.error('Error unobserving strokes:', e);
+      }
+      
+      if (providerRef.current) {
+        try {
+          providerRef.current.disconnect();
+          providerRef.current.destroy();
+          console.log('✅ WebSocket provider cleaned up');
+        } catch (e) {
+          console.error('⚠️ Error destroying provider:', e);
+        }
+        providerRef.current = null;
+      }
+      
+      try {
+        ydoc.destroy();
+      } catch (e) {
+        console.error('⚠️ Error destroying ydoc:', e);
+      }
+      ydocRef.current = null;
     };
   }, [roomId]); // username intentionally excluded — handled by separate effect
 
   // ── 2. Pause / Resume ─────────────────────────────────────────────────────
-  //
-  // Pause  → disconnect WebSocket provider. Canvas freezes.
-  // Resume → reconnect. Yjs automatically syncs all missed updates from the
-  //          y-websocket server and fires strokes.observe(redraw) when done,
-  //          jumping the canvas forward to the current live state.
   const handlePause = () => {
     const provider = providerRef.current;
     if (!provider) return;
@@ -349,9 +387,6 @@ useEffect(() => {
     if (pts.length < 2) return;
 
     ctx.beginPath();
-    // Live preview uses source-over only — eraser preview looks like drawing
-    // but the final redraw will use destination-out for persistence. This is
-    // intentional: the offscreen compositing in redraw() is the source of truth.
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = isEraserRef.current ? '#121216' : colorRef.current;
     ctx.lineWidth   = brushSizeRef.current;
@@ -362,6 +397,7 @@ useEffect(() => {
     ctx.stroke();
   }, [getPos, updateAwarenessCursor]);
 
+  // ✅ FIX: Better error handling for persist
   const onMouseUp = useCallback(() => {
     if (!drawing.current || !canDrawRef.current || !ydocRef.current) return;
     drawing.current = false;
@@ -371,9 +407,14 @@ useEffect(() => {
       return;
     }
 
+    // ✅ FIX: Double-check permission before persisting
+    if (!canDrawRef.current) {
+      console.warn('❌ Permission denied: You do not have permission to draw');
+      currentPath.current = [];
+      return;
+    }
+
     // Commit stroke to Yjs as a plain serializable object.
-    // The redraw() observer will fire and re-render all strokes correctly
-    // via the offscreen compositing approach (eraser works persistently).
     const strokes = ydocRef.current.getArray('strokes');
     strokes.push([{
       points:   currentPath.current,
@@ -384,14 +425,32 @@ useEffect(() => {
     currentPath.current = [];
 
     // ── Persist to backend ────────────────────────────────────────────────────
-    // Send the full current Yjs state as a binary update.
-    // The backend stores this as a WhiteboardUpdate row.
+    // ✅ FIX: Better error handling with specific messages
     const stateVector = Y.encodeStateAsUpdate(ydocRef.current);
     api.post(
       `/api/rooms/${roomId}/whiteboard/update`,
       stateVector,
-      { headers: { 'Content-Type': 'application/octet-stream' } }
-    ).catch(err => console.error('Failed to persist update:', err));
+      { 
+        headers: { 'Content-Type': 'application/octet-stream' },
+        timeout: 5000, // 5 second timeout
+      }
+    )
+      .then(() => {
+        console.log('✅ Whiteboard update persisted successfully');
+      })
+      .catch(err => {
+        if (err.response?.status === 403) {
+          console.error('❌ 403 Forbidden: You do not have permission to update this whiteboard.');
+          console.error('   Reason: Your role may not have been promoted to CONTRIBUTOR yet.');
+          console.error('   Action: Ask the room admin to promote you in the Members panel.');
+        } else if (err.response?.status === 401) {
+          console.error('❌ 401 Unauthorized: Your session may have expired. Please refresh the page.');
+        } else if (err.response?.status === 404) {
+          console.error('❌ 404 Not Found: The whiteboard endpoint is not available.');
+        } else {
+          console.error('❌ Failed to persist whiteboard update:', err.message);
+        }
+      });
   }, [roomId]);
 
   const onMouseLeave = useCallback(() => {
@@ -399,208 +458,199 @@ useEffect(() => {
     updateAwarenessCursor(null);
   }, [onMouseUp, updateAwarenessCursor]);
 
-  const handleUndo = () => {
-    if (undoManagerRef.current && canDraw) undoManagerRef.current.undo();
-  };
+  // ── 4. Render ─────────────────────────────────────────────────────────────
 
-  const handleRedo = () => {
-    if (undoManagerRef.current && canDraw) undoManagerRef.current.redo();
-  };
-
-  const handleClear = () => {
-    if (!ydocRef.current || !canDraw) return;
-    const strokes = ydocRef.current.getArray('strokes');
-    ydocRef.current.transact(() => strokes.delete(0, strokes.length));
-  };
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={styles.wrapper}>
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+    <div style={styles.wrapper} ref={containerRef}>
       <div style={styles.toolbar}>
         <div style={styles.toolGroup}>
-          <span style={{ color: connected ? '#2ed573' : '#ffa502', fontWeight: 600, fontSize: 14 }}>
-            {connected ? '🟢 Live' : '🟡 Connecting…'}
+          <span style={{ color: '#a4b0be', fontSize: 13, fontWeight: 500 }}>
+            {connected ? '🟢 Connected' : '🔴 Offline'}
           </span>
-
-          {paused && (
-            <span style={styles.pausedBanner}>⏸ Paused</span>
-          )}
-
-          {!canDraw && !paused && (
-            <span style={styles.viewOnlyBanner}>👁 View Only</span>
-          )}
-
-          {/* Pause / Resume button — available to everyone */}
-          <button style={styles.pauseBtn} onClick={handlePause}>
-            {paused ? '▶ Resume' : '⏸ Pause'}
-          </button>
-
-          {/* Members panel toggle — shown to host */}
-          {isHost && (
-            <button
-              style={styles.membersBtn}
-              onClick={() => setShowMembers(v => !v)}
-            >
-              👥 Members
-            </button>
-          )}
         </div>
 
-        {canDraw && (
-          <div style={styles.toolGroup}>
-            <div style={styles.colorPalette}>
-              {COLORS.map(c => (
-                <button
-                  key={c}
-                  style={{
-                    ...styles.colorBtn,
-                    backgroundColor: c,
-                    border: color === c && !isEraser
-                      ? '2px solid #fff'
-                      : '2px solid transparent',
-                    boxShadow: color === c && !isEraser
-                      ? '0 0 8px rgba(255,255,255,0.5)'
-                      : 'none',
-                  }}
-                  onClick={() => { setColor(c); setIsEraser(false); }}
-                />
-              ))}
-            </div>
-
-            <div style={styles.divider} />
-
-            <select
-              value={brushSize}
-              onChange={e => setBrushSize(Number(e.target.value))}
-              style={styles.select}
-            >
-              {BRUSH_SIZES.map(size => (
-                <option key={size} value={size}>{size}px</option>
-              ))}
-            </select>
-
-            <div style={styles.divider} />
-
-            <button
-              style={{ ...styles.toolBtn, background: isEraser ? '#555' : 'transparent' }}
-              onClick={() => setIsEraser(true)}
-              title="Eraser"
-            >
-              🧹
-            </button>
-
-            <div style={styles.divider} />
-
-            <button style={styles.toolBtn} onClick={handleUndo} title="Undo">↩️</button>
-            <button style={styles.toolBtn} onClick={handleRedo} title="Redo">↪️</button>
-
-            <div style={styles.divider} />
-
-            <button onClick={handleClear} style={styles.clearBtn}>🗑 Clear</button>
+        {!canDraw && (
+          <div style={styles.viewOnlyBanner}>
+            👁️ View-only mode. Ask the host to promote you.
           </div>
         )}
+
+        {paused && (
+          <div style={styles.pausedBanner}>
+            ⏸️ Paused — changes won't sync
+          </div>
+        )}
+
+        <div style={styles.toolGroup}>
+          {canDraw && (
+            <>
+              <div style={styles.colorPalette}>
+                {COLORS.map(c => (
+                  <button
+                    key={c}
+                    style={{
+                      ...styles.colorBtn,
+                      backgroundColor: c,
+                      border: color === c ? '2px solid #fff' : '1px solid #666',
+                      transform: color === c ? 'scale(1.15)' : 'scale(1)',
+                    }}
+                    onClick={() => setColor(c)}
+                    title={c}
+                  />
+                ))}
+              </div>
+
+              <div style={styles.divider} />
+
+              <select
+                value={brushSize}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                style={styles.select}
+              >
+                {BRUSH_SIZES.map(s => (
+                  <option key={s} value={s}>
+                    ✏️ {s}px
+                  </option>
+                ))}
+              </select>
+
+              <button
+                style={{
+                  ...styles.toolBtn,
+                  backgroundColor: isEraser ? '#ff4757' : 'transparent',
+                  color: isEraser ? '#fff' : '#a4b0be',
+                }}
+                onClick={() => setIsEraser(!isEraser)}
+                title="Eraser"
+              >
+                🗑️
+              </button>
+
+              <button
+                style={{
+                  ...styles.toolBtn,
+                  backgroundColor: undoManagerRef.current ? '#3f3f4e' : '#2a2a2f',
+                  cursor: undoManagerRef.current ? 'pointer' : 'default',
+                }}
+                onClick={() => {
+                  if (undoManagerRef.current) {
+                    undoManagerRef.current.undo();
+                  }
+                }}
+                title="Undo (Ctrl+Z)"
+              >
+                ↶
+              </button>
+
+              <div style={styles.divider} />
+
+              <button
+                style={styles.clearBtn}
+                onClick={() => {
+                  if (ydocRef.current && window.confirm('Clear entire whiteboard?')) {
+                    const strokes = ydocRef.current.getArray('strokes');
+                    strokes.delete(0, strokes.length);
+                  }
+                }}
+              >
+                🗑️ Clear All
+              </button>
+            </>
+          )}
+
+          <div style={styles.divider} />
+
+          <button style={styles.pauseBtn} onClick={handlePause}>
+            {paused ? '▶️ Resume' : '⏸️ Pause'}
+          </button>
+
+          <button
+            style={styles.membersBtn}
+            onClick={() => setShowMembers(!showMembers)}
+          >
+            👥 Members
+          </button>
+        </div>
       </div>
 
-      {/* ── Promotion toast ──────────────────────────────────────────────── */}
       {promoted && (
         <div style={styles.promotionToast}>
           {promotedMsg}
         </div>
       )}
 
-      {/* ── Members panel (host only) ─────────────────────────────────────── */}
-      {showMembers && (
-        <div style={styles.membersPanel}>
-          <div style={styles.membersPanelHeader}>
-            <span style={{ fontWeight: 600 }}>Room Members</span>
-            <button style={styles.closeBtn} onClick={() => setShowMembers(false)}>✕</button>
-          </div>
-          {members.length === 0 && (
-            <p style={{ color: '#a4b0be', fontSize: 13, padding: '8px 0' }}>
-              Loading members…
-            </p>
-          )}
-          {members.map(member => (
-            <div key={member.id} style={styles.memberRow}>
-              <div style={styles.memberInfo}>
-                <span style={styles.memberDot} />
-                <span style={{ fontSize: 14 }}>{member.username}</span>
-                <span style={styles.memberRole}>{member.role}</span>
-              </div>
-              {/* Show promote button only for viewers who aren't already contributors */}
-              {isHost && member.role !== 'CONTRIBUTOR' && member.role !== 'ADMIN' && (
-                <button
-                  style={styles.promoteBtn}
-                  onClick={() => promoteUser(member.id)}
-                >
-                  Promote
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Canvas area ──────────────────────────────────────────────────── */}
-      <div ref={containerRef} style={styles.canvasContainer}>
-        {/* Paused overlay */}
-        {paused && (
-          <div style={styles.pauseOverlay}>
-            <div style={styles.pauseOverlayInner}>
-              <span style={{ fontSize: 48 }}>⏸</span>
-              <p style={{ marginTop: 12, fontSize: 16, color: '#a4b0be' }}>
-                Whiteboard paused
-              </p>
-              <button style={styles.resumeOverlayBtn} onClick={handlePause}>
-                ▶ Resume & Sync
-              </button>
-            </div>
-          </div>
-        )}
-
+      <div style={styles.canvasContainer}>
         <canvas
           ref={canvasRef}
-          style={{
-            ...styles.canvas,
-            cursor: canDraw
-              ? (isEraser ? 'cell' : 'crosshair')
-              : 'default',
-            pointerEvents: paused ? 'none' : 'auto',
-          }}
+          style={styles.canvas}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseLeave}
         />
 
-        {/* ── Live cursors of other users ─────────────────────────────────
-            Positions are stored normalized (0–1). We denormalize here using
-            the container dimensions so they are correct on every screen size.
-        ─────────────────────────────────────────────────────────────────── */}
-        {awarenessUsers.map((user, i) => {
-          const container = containerRef.current;
-          if (!container || !user.cursor) return null;
-          const absX = user.cursor.x * container.clientWidth;
-          const absY = user.cursor.y * container.clientHeight;
+        {showMembers && (
+          <div style={styles.membersPanel}>
+            <div style={styles.membersPanelHeader}>
+              <span>👥 Members ({members.length})</span>
+              <button
+                style={styles.closeBtn}
+                onClick={() => setShowMembers(false)}
+              >
+                ✕
+              </button>
+            </div>
+            {members.map(m => (
+              <div key={m.id} style={styles.memberRow}>
+                <div style={styles.memberInfo}>
+                  <span style={styles.memberDot} />
+                  <span>{m.username}</span>
+                  <span style={styles.memberRole}>{m.role}</span>
+                </div>
+                {isHost && m.role === 'MEMBER' && (
+                  <button
+                    style={styles.promoteBtn}
+                    onClick={() => promoteUser(m.id)}
+                  >
+                    Promote
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {paused && (
+          <div style={styles.pauseOverlay}>
+            <div style={styles.pauseOverlayInner}>
+              <h2>⏸️ Paused</h2>
+              <p>Edits won't sync while paused</p>
+              <button
+                style={styles.resumeOverlayBtn}
+                onClick={handlePause}
+              >
+                Resume
+              </button>
+            </div>
+          </div>
+        )}
+
+        {awarenessUsers.map((user, idx) => {
+          if (!user.cursor) return null;
+          const x = user.cursor.x * 100;
+          const y = user.cursor.y * 100;
           return (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                left: absX,
-                top: absY,
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                zIndex: 10,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}
-            >
+            <div key={idx} style={{
+              position: 'absolute',
+              left: `${x}%`,
+              top: `${y}%`,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}>
               <div style={{
-                width: 10,
-                height: 10,
+                width: 12,
+                height: 12,
                 borderRadius: '50%',
                 backgroundColor: user.color,
                 border: '2px solid #fff',
