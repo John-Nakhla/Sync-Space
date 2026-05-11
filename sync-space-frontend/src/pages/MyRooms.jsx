@@ -49,8 +49,8 @@ const MyRooms = () => {
                     {rooms.map((room) => (
                         <div key={room.roomId} className="room-card">
                             <div className="room-info">
-                                <h2>{room.roomName}</h2>
-                                <p>{room.roomDescription}</p>
+                                <h2>{room.name}</h2>
+                                <p>{room.description}</p>
                                 <p>{room.status}</p>
                                 <p>{room.joinCode}</p>
                             </div>
