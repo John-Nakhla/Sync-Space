@@ -27,26 +27,15 @@ public interface RoomWhiteboardVersionRepository extends JpaRepository<RoomWhite
      *   - Insert the row when the room is created:
      *       INSERT INTO room_whiteboard_version (room_id, current_version) VALUES (?, 0)
      */
-    @Modifying
-    @Query(
-        value = """
-            UPDATE room_whiteboard_version
-               SET current_version = current_version + 1
-             WHERE room_id = :roomId
-            RETURNING current_version
-            """,
-        nativeQuery = true
-    )
-    Long incrementAndGet(@Param("roomId") Long roomId);
+  @Modifying
+@Query(value = """
+        INSERT INTO room_whiteboard_version (room_id, current_version)
+        VALUES (:roomId, 1)
+        ON CONFLICT (room_id)
+        DO UPDATE SET current_version = room_whiteboard_version.current_version + 1
+        """, nativeQuery = true)
+void increment(@Param("roomId") Long roomId);
 
-    /**
-     * Read the current version without incrementing.
-     * Used when saving a snapshot (we tag the snapshot with the current version,
-     * not a new incremented one, because the snapshot represents existing state).
-     */
-    @Query(
-        value = "SELECT current_version FROM room_whiteboard_version WHERE room_id = :roomId",
-        nativeQuery = true
-    )
-    Long getCurrentVersion(@Param("roomId") Long roomId);
-}
+@Query(value = "SELECT current_version FROM room_whiteboard_version WHERE room_id = :roomId",
+       nativeQuery = true)
+Long getCurrentVersion(@Param("roomId") Long roomId);}

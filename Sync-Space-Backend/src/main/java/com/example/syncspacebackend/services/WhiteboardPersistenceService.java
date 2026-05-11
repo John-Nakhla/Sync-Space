@@ -39,19 +39,13 @@ public class WhiteboardPersistenceService {
      * The actual snapshot is submitted by the client via the /snapshot endpoint —
      * the server does not merge Yjs documents (no JVM Yjs library required).
      */
-    @Transactional
-    public void saveUpdate(Room room, User user, byte[] updateData) {
-        // Atomically increment and fetch the next version for this room.
-        // RoomWhiteboardVersionRepository.incrementAndGet uses a native query:
-        //   UPDATE room_whiteboard_version
-        //      SET current_version = current_version + 1
-        //    WHERE room_id = :roomId
-        //   RETURNING current_version
-        Long nextVersion = versionRepository.incrementAndGet(room.getId());
-
-        WhiteboardUpdate newUpdate = new WhiteboardUpdate(room, user, nextVersion, updateData);
-        updateRepository.save(newUpdate);
-    }
+   @Transactional
+public void saveUpdate(Room room, User user, byte[] updateData) {
+    versionRepository.increment(room.getId());
+    Long nextVersion = versionRepository.getCurrentVersion(room.getId());
+    WhiteboardUpdate newUpdate = new WhiteboardUpdate(room, user, nextVersion, updateData);
+    updateRepository.save(newUpdate);
+}
 
     /**
      * SAVE A SNAPSHOT
