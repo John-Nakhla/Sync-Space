@@ -41,11 +41,10 @@ public class Room {
     private LocalDateTime createdAt;
 
     @Column
-    private LocalDateTime endedAt;
+    private LocalDateTime closedAt;
 
     public enum RoomStatus {
-        WAITING,   // Created, not started yet — members cannot enter
-        ACTIVE,    // Started by admin — everyone can participate
-        ENDED      // Closed by admin — room is dead
+        ACTIVE,   // Room is live — everyone can participate
+        INACTIVE  // Admin closed the room — nobody can enter
     }
 }

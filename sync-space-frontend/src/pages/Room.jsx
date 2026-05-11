@@ -9,27 +9,25 @@ import './Room.css';
 const API = 'http://localhost:8080/api/rooms';
 
 const Room = () => {
-  const { roomId } = useParams();
-  const navigate   = useNavigate();
-  const location   = useLocation();
+  const { roomId }  = useParams();
+  const navigate    = useNavigate();
+  const location    = useLocation();
 
-  const [userRole,    setUserRole]    = useState(location.state?.role || 'MEMBER');
-  const [roomStatus,  setRoomStatus]  = useState('WAITING');
-  const [roomDetails, setRoomDetails] = useState({ name: '', joinCode: '' });
-  const [members,     setMembers]     = useState([]);
-  const [showCode,    setShowCode]    = useState(false);
-  const [activeView,  setActiveView]  = useState('whiteboard');
-  const [toast,       setToast]       = useState(null);
+  const [userRole,      setUserRole]      = useState(location.state?.role || 'MEMBER');
+  const [roomDetails,   setRoomDetails]   = useState({ name: '', joinCode: '' });
+  const [members,       setMembers]       = useState([]);
+  const [showCode,      setShowCode]      = useState(false);
+  const [activeView,    setActiveView]    = useState('whiteboard');
+  const [toast,         setToast]         = useState(null);
+  const [closedModal,   setClosedModal]   = useState({ show: false, message: '' });
+  const [waitingForAdmin, setWaitingForAdmin] = useState(false);
 
-  // ── Refs to avoid stale closures inside WebSocket handlers ───────────────
   const navigateRef = useRef(navigate);
   const userRoleRef = useRef(userRole);
-
   useEffect(() => { navigateRef.current = navigate; }, [navigate]);
-  useEffect(() => { userRoleRef.current = userRole; }, [userRole]);
+  useEffect(() => { userRoleRef.current = userRole;  }, [userRole]);
 
-  // canDraw re-computes automatically whenever userRole or roomStatus changes
-  const canDraw = (userRole === 'ADMIN' || userRole === 'CONTRIBUTOR') && roomStatus === 'ACTIVE';
+  const canDraw = userRole === 'ADMIN' || userRole === 'CONTRIBUTOR';
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type });
@@ -37,165 +35,187 @@ const Room = () => {
   };
 
   const authHeaders = () => ({
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    Authorization: `Bearer ${localStorage.getItem('token')}`
   });
 
-  // ── fetchData: syncs room status, members, AND current user's role ────────
+  // Refresh room + members (used by WS events)
   const fetchData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
-      const myId  = localStorage.getItem('userId');
-      if (!token) { navigate('/login'); return; }
-
+      const myId = localStorage.getItem('userId');
       const [roomRes, membersRes] = await Promise.all([
-        axios.get(`${API}/${roomId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API}/${roomId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API}/${roomId}`,         { headers: authHeaders() }),
+        axios.get(`${API}/${roomId}/members`, { headers: authHeaders() }),
       ]);
-
-      setRoomStatus(roomRes.data.status);
       setRoomDetails({ name: roomRes.data.name, joinCode: roomRes.data.joinCode });
       setMembers(membersRes.data);
-
-      // Always sync current user's role from the members list so promotion
-      // works correctly even if the WS userId comparison ever drifts.
       const me = membersRes.data.find(m => String(m.id) === String(myId));
-      if (me) setUserRole(me.role);
-
-    } catch (err) {
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      } else {
-        navigate('/my-rooms');
+      if (me) {
+        setUserRole(me.role);
+        userRoleRef.current = me.role;
       }
-    }
-  }, [roomId, navigate]);
+    } catch { /* handled by init */ }
+  }, [roomId]);
 
-  // ── FIX 1: Poll every 3 s while in WAITING lobby ─────────────────────────
-  // Guarantees members auto-switch to the workspace even if they missed the
-  // WebSocket START_SIGNAL (race condition: WS subscribe races with page load).
+  // ── Initial load + WebSocket ──────────────────────────────────────────────
   useEffect(() => {
-    if (roomStatus !== 'WAITING') return;
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
-  }, [roomStatus, fetchData]);
+    const token = localStorage.getItem('token');
+    const myId  = localStorage.getItem('userId');
+    if (!token) { navigate('/login'); return; }
 
-  // ── Initial load + WebSocket setup ───────────────────────────────────────
-  useEffect(() => {
-    fetchData();
+    const init = async () => {
+      try {
+        const [roomRes, membersRes] = await Promise.all([
+          axios.get(`${API}/${roomId}`,         { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API}/${roomId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+
+        setRoomDetails({ name: roomRes.data.name, joinCode: roomRes.data.joinCode });
+        setMembers(membersRes.data);
+
+        const me      = membersRes.data.find(m => String(m.id) === String(myId));
+        const myRole  = me?.role || location.state?.role || 'MEMBER';
+        setUserRole(myRole);
+        userRoleRef.current = myRole;
+
+        if (myRole === 'ADMIN') {
+          // Tell server admin is here → broadcasts ADMIN_ENTERED to waiting members
+          await axios.post(`${API}/${roomId}/admin-enter`, {},
+            { headers: { Authorization: `Bearer ${token}` } });
+        } else {
+          // Check if admin is already in the room
+          const presRes = await axios.get(`${API}/${roomId}/admin-present`,
+            { headers: { Authorization: `Bearer ${token}` } });
+          if (!presRes.data.adminPresent) {
+            setWaitingForAdmin(true);
+          }
+        }
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          localStorage.removeItem('token');
+          navigate('/login');
+        } else {
+          navigate('/my-rooms');
+        }
+      }
+    };
+
+    init();
 
     const client = new Client({
       webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
       reconnectDelay: 5000,
       onConnect: () => {
         client.subscribe(`/topic/room/${roomId}`, (msg) => {
-          const data = JSON.parse(msg.body);
+          const data  = JSON.parse(msg.body);
           if (String(data.roomId) !== String(roomId)) return;
-
-          const myId = localStorage.getItem('userId');
+          const myId  = localStorage.getItem('userId');
 
           switch (data.type) {
 
-            case 'START_SIGNAL':
-              // Instantly switch lobby → workspace for all WS subscribers
-              setRoomStatus('ACTIVE');
-              showToast('Session is now live!', 'success');
+            // Admin just entered → unblock waiting members
+            case 'ADMIN_ENTERED':
+              setWaitingForAdmin(false);
+              fetchData();
               break;
 
-            case 'RESTART_SIGNAL':
-              setRoomStatus('WAITING');
-              showToast('Room reset to lobby.', 'info');
+            // Room closed by admin
+            case 'CLOSE_SIGNAL':
+              // Admin already navigated away in handleClose — this is for members only
+              if (userRoleRef.current !== 'ADMIN') {
+                setClosedModal({
+                  show: true,
+                  message: 'This room has been closed by the admin.',
+                });
+              }
               break;
 
-            case 'END_SIGNAL':
-              // Admin already confirmed via dialog — redirect silently.
-              // Members get an informational alert.
-              if (userRoleRef.current === 'ADMIN') {
-                navigateRef.current('/my-rooms');
-              } else {
-                alert('This room has been closed by the Admin.');
-                navigateRef.current('/my-rooms');
+            case 'MEMBER_JOINED':
+              fetchData();
+              break;
+
+            case 'MEMBER_LEFT':
+              if (String(data.userId) !== String(myId)) {
+                showToast(`${data.username} left the room.`, 'info');
+                fetchData();
               }
               break;
 
             case 'ROLE_UPDATED':
               if (String(data.userId) === String(myId)) {
-                // Optimistic instant update — grants draw without waiting for fetchData
                 setUserRole('CONTRIBUTOR');
-                showToast('You are now a Contributor! You can draw.', 'success');
+                userRoleRef.current = 'CONTRIBUTOR';
+                showToast('🎨 You are now a Contributor — you can draw!', 'success');
+              } else {
+                showToast(`⭐ ${data.username} is now a Contributor and can draw.`, 'success');
               }
-              // fetchData re-syncs members list AND re-confirms role from backend
               fetchData();
               break;
 
             case 'KICK_SIGNAL':
               if (String(data.userId) === String(myId)) {
-                alert('You have been removed from this room.');
-                navigateRef.current('/my-rooms');
+                setClosedModal({ show: true, message: 'You have been removed from this room.' });
               } else {
                 fetchData();
               }
               break;
 
-            default:
-              break;
+            default: break;
           }
         });
       },
     });
 
     client.activate();
-    return () => client.deactivate();
+
+    return () => {
+      // If admin navigates away without closing, mark as absent
+      if (userRoleRef.current === 'ADMIN') {
+        axios.post(`${API}/${roomId}/admin-leave`, {},
+          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        ).catch(() => {});
+      }
+      client.deactivate();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // ── Admin actions ─────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────
 
-  const handleStart = async () => {
-    try {
-      const endpoint = roomStatus === 'ENDED' ? 'restart' : 'start';
-      await axios.post(`${API}/${roomId}/${endpoint}`, {}, authHeaders());
-
-      // ── FIX 2: Optimistic local update for the admin ──────────────────────
-      // The admin triggered the action so update their own view immediately.
-      // The WebSocket START_SIGNAL / RESTART_SIGNAL handles every other client.
-      if (endpoint === 'start') {
-        setRoomStatus('ACTIVE');           // lobby → workspace instantly for admin
-        showToast('Session is now live!', 'success');
-      } else {
-        setRoomStatus('WAITING');          // workspace → lobby instantly for admin
-        showToast('Room reset to lobby.', 'info');
-      }
-    } catch (err) {
-      showToast('Failed to update session. Please try again.', 'warning');
+  const handleLeave = async () => {
+    if (userRole === 'ADMIN') {
+      await axios.post(`${API}/${roomId}/admin-leave`, {}, { headers: authHeaders() }).catch(() => {});
+      navigate('/my-rooms');
+      return;
     }
+    await axios.delete(`${API}/${roomId}/leave`, { headers: authHeaders() }).catch(() => {});
+    navigate('/my-rooms');
   };
 
-  const handleCloseAll = async () => {
+  const handleClose = async () => {
     if (!window.confirm('Close this room for everyone? All members will be redirected.')) return;
     try {
-      await axios.post(`${API}/${roomId}/end`, {}, authHeaders());
-      // END_SIGNAL WebSocket message redirects everyone including admin
-    } catch (err) {
+      await axios.post(`${API}/${roomId}/close`, {}, { headers: authHeaders() });
+      // Admin navigates directly; members get CLOSE_SIGNAL via WebSocket
+      navigate('/my-rooms');
+    } catch {
       showToast('Failed to close room.', 'warning');
     }
   };
 
   const handlePromote = async (targetUserId) => {
     try {
-      await axios.patch(`${API}/${roomId}/promote/${targetUserId}`, {}, authHeaders());
-      showToast('Member promoted to Contributor.', 'success');
-    } catch (err) {
-      showToast('Failed to promote member.', 'warning');
+      await axios.patch(`${API}/${roomId}/promote/${targetUserId}`, {}, { headers: authHeaders() });
+      // Toast comes via WebSocket ROLE_UPDATED
+    } catch {
+      showToast('Failed to promote member. Check CORS allows PATCH.', 'warning');
     }
   };
 
   const handleRemove = async (targetUserId, username) => {
     if (!window.confirm(`Remove "${username}" from this room?`)) return;
     try {
-      await axios.delete(`${API}/${roomId}/remove/${targetUserId}`, authHeaders());
-      showToast(`${username} removed.`, 'warning');
-    } catch (err) {
+      await axios.delete(`${API}/${roomId}/remove/${targetUserId}`, { headers: authHeaders() });
+    } catch {
       showToast('Failed to remove member.', 'warning');
     }
   };
@@ -205,48 +225,44 @@ const Room = () => {
     showToast(`Code "${roomDetails.joinCode}" copied!`, 'success');
   };
 
-  // ── Lobby / Ended screen ──────────────────────────────────────────────────
-  if (roomStatus === 'WAITING' || roomStatus === 'ENDED') {
+  // ── Waiting screen (member waiting for admin) ─────────────────────────────
+  if (waitingForAdmin) {
     return (
-      <div className="lobby-overlay">
-        {/* Toast is visible inside the lobby too */}
-        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-
-        <div className="lobby-card">
-          <div className="lobby-badge">{roomStatus === 'ENDED' ? 'ENDED' : 'LOBBY'}</div>
-          <h2>{roomDetails.name}</h2>
-
-          {userRole === 'ADMIN' ? (
-            <>
-              <p className="lobby-hint">Share this code so members can join:</p>
-              <div className="code-display">
-                <span className="join-code-big">{roomDetails.joinCode}</span>
-                <button className="copy-btn" onClick={copyCode}>📋 Copy</button>
-              </div>
-              <button className="start-btn" onClick={handleStart}>
-                {roomStatus === 'ENDED' ? '🔄 Restart Session' : '🚀 Start Session'}
-              </button>
-            </>
-          ) : (
-            <div className="waiting-mode">
-              <div className="spinner" />
-              <p>Waiting for the Admin to start the session…</p>
-            </div>
-          )}
-
-          <button className="lobby-leave-btn" onClick={() => navigate('/my-rooms')}>
-            ← Back to My Rooms
+      <div className="waiting-overlay">
+        <div className="waiting-box">
+          <div className="waiting-icon">⏳</div>
+          <h2>Room Not Started Yet</h2>
+          <p>Waiting for the admin to open the room...</p>
+          <button className="leave-btn" style={{ marginTop: '1.5rem' }}
+            onClick={() => navigate('/my-rooms')}>
+            🚪 Go Back
           </button>
         </div>
       </div>
     );
   }
 
-  // ── Active workspace ──────────────────────────────────────────────────────
+  // ── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="workspace">
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
+      {/* ── Room Closed / Kicked Modal ── */}
+      {closedModal.show && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="modal-icon">🔒</div>
+            <h2 className="modal-title">Room Closed</h2>
+            <p className="modal-message">{closedModal.message}</p>
+            <button className="modal-ok-btn"
+              onClick={() => { setClosedModal({ show: false, message: '' }); navigate('/my-rooms'); }}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sidebar ── */}
       <div className="sidebar">
         <div className="sidebar-header">
           <h3 className="room-title-sidebar" title={roomDetails.name}>{roomDetails.name}</h3>
@@ -270,28 +286,24 @@ const Room = () => {
         <hr className="sidebar-divider" />
 
         <div className="view-switcher">
-          <button
-            className={`view-tab ${activeView === 'whiteboard' ? 'active' : ''}`}
-            onClick={() => setActiveView('whiteboard')}
-          >
+          <button className={`view-tab ${activeView === 'whiteboard' ? 'active' : ''}`}
+            onClick={() => setActiveView('whiteboard')}>
             🖊 Whiteboard
           </button>
-          <button
-            className={`view-tab ${activeView === 'members' ? 'active' : ''}`}
-            onClick={() => setActiveView('members')}
-          >
+          <button className={`view-tab ${activeView === 'members' ? 'active' : ''}`}
+            onClick={() => setActiveView('members')}>
             👥 Members ({members.length})
           </button>
         </div>
 
         <hr className="sidebar-divider" />
 
-        <button className="leave-btn" onClick={() => navigate('/my-rooms')}>🚪 Leave Room</button>
+        <button className="leave-btn" onClick={handleLeave}>🚪 Leave Room</button>
 
         {userRole === 'ADMIN' && (
           <div className="danger-zone">
             <p className="danger-label">Admin Controls</p>
-            <button className="danger-btn" onClick={handleCloseAll}>🔴 Close Room for All</button>
+            <button className="danger-btn" onClick={handleClose}>🔴 Close Room for All</button>
           </div>
         )}
 
@@ -324,10 +336,12 @@ const Room = () => {
         </div>
       </div>
 
+      {/* ── Main canvas area ── */}
       <div className="canvas-container">
         {activeView === 'whiteboard' && (
           <SharedWhiteboard roomId={roomId} canDraw={canDraw} />
         )}
+
         {activeView === 'members' && (
           <div className="members-fullview">
             <h2>Room Members</h2>

@@ -2,10 +2,12 @@ package com.example.syncspacebackend.controllers;
 
 import com.example.syncspacebackend.models.*;
 import com.example.syncspacebackend.services.RoomService;
+import com.example.syncspacebackend.services.RoomSessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 import java.util.Map;
 
@@ -14,7 +16,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class RoomController {
 
-    private final RoomService roomService;
+    private final RoomService        roomService;
+    private final RoomSessionService roomSessionService;
     private final SimpMessagingTemplate messaging;
 
     @GetMapping("/my-rooms")
@@ -29,7 +32,11 @@ public class RoomController {
 
     @PostMapping("/join/{joinCode}")
     public ResponseEntity<Room> joinRoom(@PathVariable String joinCode) {
-        return ResponseEntity.ok(roomService.joinRoomByCode(joinCode));
+        Room room = roomService.joinRoomByCode(joinCode);
+        // Explicitly cast the Map to Object to resolve ambiguity
+        messaging.convertAndSend("/topic/room/" + room.getId(),
+                (Object) Map.of("type", "MEMBER_JOINED", "roomId", room.getId()));
+        return ResponseEntity.ok(room);
     }
 
     @GetMapping("/{roomId}")
@@ -42,42 +49,67 @@ public class RoomController {
         return ResponseEntity.ok(roomService.getRoomMembers(roomId));
     }
 
-    @PostMapping("/{roomId}/start")
-    public ResponseEntity<Void> startRoom(@PathVariable Long roomId) {
-        roomService.startRoomSession(roomId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of("type", "START_SIGNAL", "roomId", roomId));
+    @PostMapping("/{roomId}/admin-enter")
+    public ResponseEntity<Void> adminEnter(@PathVariable Long roomId) {
+        roomService.verifyAdmin(roomId);
+        roomSessionService.adminEntered(roomId);
+        // Cast applied here
+        messaging.convertAndSend("/topic/room/" + roomId,
+                (Object) Map.of("type", "ADMIN_ENTERED", "roomId", roomId));
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/{roomId}/restart")
-    public ResponseEntity<Void> restartRoom(@PathVariable Long roomId) {
-        roomService.restartRoom(roomId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of("type", "RESTART_SIGNAL", "roomId", roomId));
+    @PostMapping("/{roomId}/admin-leave")
+    public ResponseEntity<Void> adminLeave(@PathVariable Long roomId) {
+        roomSessionService.adminLeft(roomId);
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/{roomId}/end")
-    public ResponseEntity<Void> endRoom(@PathVariable Long roomId) {
-        roomService.endRoom(roomId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of("type", "END_SIGNAL", "roomId", roomId));
+    @GetMapping("/{roomId}/admin-present")
+    public ResponseEntity<Map<String, Boolean>> adminPresent(@PathVariable Long roomId) {
+        return ResponseEntity.ok(Map.of("adminPresent", roomSessionService.isAdminPresent(roomId)));
+    }
+
+    @PostMapping("/{roomId}/close")
+    public ResponseEntity<Void> closeRoom(@PathVariable Long roomId) {
+        roomService.closeRoom(roomId);
+        roomSessionService.adminLeft(roomId);
+        // Cast applied here
+        messaging.convertAndSend("/topic/room/" + roomId,
+                (Object) Map.of("type", "CLOSE_SIGNAL", "roomId", roomId));
         return ResponseEntity.ok().build();
     }
 
     @PatchMapping("/{roomId}/promote/{userId}")
     public ResponseEntity<Void> promoteUser(@PathVariable Long roomId, @PathVariable Long userId) {
-        roomService.promoteParticipant(roomId, userId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of(
-            "type", "ROLE_UPDATED", "roomId", roomId, "userId", userId
-        ));
+        String username = roomService.promoteParticipant(roomId, userId);
+        // Cast applied here
+        messaging.convertAndSend("/topic/room/" + roomId,
+                (Object) Map.of("type",     "ROLE_UPDATED",
+                       "roomId",   roomId,
+                       "userId",   userId,
+                       "username", username));
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{roomId}/remove/{userId}")
     public ResponseEntity<Void> removeUser(@PathVariable Long roomId, @PathVariable Long userId) {
         roomService.removeParticipant(roomId, userId);
-        messaging.convertAndSend("/topic/room/" + roomId, (Object) Map.of(
-            "type", "KICK_SIGNAL", "roomId", roomId, "userId", userId
-        ));
+        // Cast applied here
+        messaging.convertAndSend("/topic/room/" + roomId,
+                (Object) Map.of("type", "KICK_SIGNAL", "roomId", roomId, "userId", userId));
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{roomId}/leave")
+    public ResponseEntity<Void> leaveRoom(@PathVariable Long roomId) {
+        RoomService.LeaveResult result = roomService.leaveRoom(roomId);
+        // Cast applied here
+        messaging.convertAndSend("/topic/room/" + roomId,
+                (Object) Map.of("type",     "MEMBER_LEFT",
+                       "roomId",   roomId,
+                       "userId",   result.userId(),
+                       "username", result.username()));
         return ResponseEntity.ok().build();
     }
 }
