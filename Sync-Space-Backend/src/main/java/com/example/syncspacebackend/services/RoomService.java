@@ -110,11 +110,18 @@ public class RoomService {
         }
 
         // 4. Success path
-        participantRepository.save(RoomParticipant.builder()
+        RoomParticipantId id = new RoomParticipantId();
+        id.setRoomId(room.getId());
+        id.setUserId(user.getId());
+
+        RoomParticipant participant = RoomParticipant.builder()
+                .id(id)
                 .room(room)
                 .user(user)
-                .role(RoomParticipant.Role.MEMBER)
-                .build());
+                .role(RoomParticipant.Role.ADMIN)
+                .build();
+
+        participantRepository.save(participant);
 
         return "Success: " + room.getName();
     }
