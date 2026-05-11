@@ -9,6 +9,7 @@ function CreateRoomModal({ onClose }) {
     e.preventDefault();
     const room = await createRoom(roomData);
     setCreatedRoom(room);
+    window.location.reload(); 
   };
 
   return (
