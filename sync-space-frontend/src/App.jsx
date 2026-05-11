@@ -28,6 +28,10 @@ function App() {
           
           {/* FIX 2: Render <Room /> here instead of <ChatRoom /> */}
           <Route path="/room/:roomId" element={<Room />} />
+          {/* <Route path="create-room" element={<CreateRoom />} />
+          <Route path="join-room" element={<JoinRoom />} /> */}
+          <Route path="my-rooms" element={<MyRooms />} />
+          <Route path="/chat/:roomId" element={<ChatRoom />} />
         </Route>
 
       </Route>

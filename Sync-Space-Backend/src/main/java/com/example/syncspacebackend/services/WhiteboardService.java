@@ -2,7 +2,6 @@ package com.example.syncspacebackend.services;
 
 import com.example.syncspacebackend.dtos.WhiteboardStateResponse;
 import com.example.syncspacebackend.models.Room;
-import com.example.syncspacebackend.models.RoomParticipant;
 import com.example.syncspacebackend.models.WhiteboardSnapshot;
 import com.example.syncspacebackend.models.WhiteboardUpdate;
 import com.example.syncspacebackend.repositories.RoomParticipantRepository;

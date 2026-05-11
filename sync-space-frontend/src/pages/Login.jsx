@@ -11,7 +11,7 @@ const Login = () => {
         e.preventDefault();
         try {
             await login(formData);
-            navigate('/'); // Redirect to Home/Rooms after success
+            navigate('/my-rooms'); // Redirect to Home/Rooms after success
         } catch (err) {
             alert("Login failed. Check your credentials.");
         }

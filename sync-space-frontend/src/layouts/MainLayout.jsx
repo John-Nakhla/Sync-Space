@@ -14,9 +14,9 @@ function MainLayout() {
 
 const styles = {
   container: {
-    padding: "40px",
-    maxWidth: "1000px",
-    margin: "0 auto",
+    // no maxWidth, no margin auto, no padding here
+    width: "100%",
+    boxSizing: "border-box",
   },
 };
 

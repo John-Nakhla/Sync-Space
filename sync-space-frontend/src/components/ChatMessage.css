@@ -1,0 +1,227 @@
+/* =========================
+   MESSAGE ROW
+========================= */
+.message-row {
+    display: flex;
+    flex-direction: column;
+    margin: 4px 12px;
+    max-width: 62%;
+}
+
+.message-row.other {
+    align-self: flex-start;
+    align-items: flex-start;
+}
+
+.message-row.mine {
+    align-self: flex-end;
+    align-items: flex-end;
+    margin-left: auto;
+}
+
+/* =========================
+   SENDER NAME
+========================= */
+.sender-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #534AB7;
+    margin-bottom: 3px;
+    padding: 0 2px;
+}
+
+/* =========================
+   BUBBLE
+========================= */
+.message-bubble {
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-word;
+}
+
+.message-row.mine .message-bubble {
+    background-color: #7F77DD;
+    color: #EEEDFE;
+    border-bottom-right-radius: 4px;
+}
+
+.message-row.other .message-bubble {
+    background-color: #ffffff;
+    color: #1a1a2e;
+    border: 1px solid #e5e4e7;
+    border-bottom-left-radius: 4px;
+}
+
+/* =========================
+   TIMESTAMP
+========================= */
+.message-time {
+    font-size: 11px;
+    color: #080111;
+    margin-top: 3px;
+    padding: 0 2px;
+}
+
+/* =========================
+   REPLY BOX (inside bubble)
+========================= */
+.reply-box {
+    background: rgba(255, 255, 255, 0.18);
+    border-left: 3px solid rgba(255, 255, 255, 0.6);
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border-radius: 0 6px 6px 0;
+}
+
+/* reply-box inside OTHER's bubble (white bg) */
+.message-row.other .reply-box {
+    background: #EEEDFE;
+    border-left-color: #7F77DD;
+}
+
+.reply-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 2px;
+}
+
+.message-row.other .reply-label {
+    color: #534AB7;
+}
+
+.reply-text {
+    font-size: 12px;
+    color: rgba(14, 0, 0, 0.911);
+    line-height: 1.4;
+}
+
+.message-row.other .reply-text {
+    color: #3C3489;
+    opacity: 0.85;
+}
+
+/* =========================
+   REPLY PREVIEW BAR
+   (shown above input when replying)
+========================= */
+.reply-preview {
+    background: #ffffff;
+    border-top: 1px solid #e5e4e7;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.reply-preview-accent {
+    width: 3px;
+    border-radius: 2px;
+    background: #7F77DD;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.reply-preview-content {
+    flex: 1;
+}
+
+.reply-preview-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #534AB7;
+    margin: 0 0 2px;
+}
+
+.reply-preview-text {
+    font-size: 12px;
+    color: #6b6375;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reply-preview-close {
+    background: none;
+    border: none;
+    color: #6b6375;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.reply-preview-close:hover {
+    color: #1a1a2e;
+}
+
+
+.reply-btn {
+    background: none;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: #6b6375;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-top: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.message-row:hover .reply-btn {
+    opacity: 1;
+}
+
+.reply-btn:hover {
+    background: #EEEDFE;
+    color: #534AB7;
+}
+
+.reply-btn:active {
+    transform: scale(0.96);
+}
+
+/* =========================
+   MESSAGE TEXT
+========================= */
+.message-text {
+    margin-bottom: 6px;
+}
+
+/* =========================
+   FILE CONTAINER
+========================= */
+.file-container {
+    margin-top: 6px;
+}
+
+/* IMAGE PREVIEW */
+.image-preview {
+    max-width: 220px;
+    max-height: 180px;
+    border-radius: 10px;
+    display: block;
+    cursor: pointer;
+}
+
+/* FILE LINK */
+.file-link {
+    display: inline-block;
+    font-size: 13px;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(127, 119, 221, 0.15);
+    color: #534AB7;
+    transition: 0.2s;
+}
+
+.file-link:hover {
+    background: rgba(127, 119, 221, 0.25);
+}

@@ -2,16 +2,17 @@ package com.example.syncspacebackend.models;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 @Data
 @AllArgsConstructor
-@NoArgsConstructor
 public class UserRoomResponse {
+
     private Long roomId;
-    private String roomName;
-    private String roomDescription;
-    private String joinCode;
-    private String status;
+    private String name;
+    private String description;
     private String role;
+
+    // ✅ NEW FIELDS
+    private String status;
+    private String joinCode;
 }

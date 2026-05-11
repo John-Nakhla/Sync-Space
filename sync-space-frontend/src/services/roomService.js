@@ -1,32 +1,28 @@
-import axios from "axios";
+import api from "../api/api";
 
-const API_URL = "http://localhost:8080/api/rooms";
+const API_URL = "/api/rooms";
 
-// 🔐 Attach token to every request
-const getAuthHeader = () => {
-  return {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("token")}`,
-    },
-  };
-};
-
-// ✅ Create Room
 export const createRoom = async (roomData) => {
-  const response = await axios.post(
-    `${API_URL}/create`,
-    roomData,
-    getAuthHeader()
-  );
+  const response = await api.post(`${API_URL}/create`, roomData);
   return response.data;
 };
 
-// ✅ Join Room
 export const joinRoom = async (code) => {
-  const response = await axios.post(
-    `${API_URL}/join/${code}`,
-    {},
-    getAuthHeader()
-  );
+  const response = await api.post(`${API_URL}/join/${code}`, {});
+  return response.data;
+};
+
+export const fetchRoomInfo = async (roomId) => {
+  const response = await api.get(`${API_URL}/${roomId}`);
+  return response.data;
+};
+
+export const pauseRoomAction = async (roomId) => {
+  const response = await api.post(`${API_URL}/${roomId}/end`, {});
+  return response.data;
+};
+
+export const resumeRoomAction = async (roomId) => {
+  const response = await api.post(`${API_URL}/${roomId}/resume`, {});
   return response.data;
 };

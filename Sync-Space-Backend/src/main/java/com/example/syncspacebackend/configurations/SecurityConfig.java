@@ -41,29 +41,27 @@ public class SecurityConfig {
     }
 
     // ================= SECURITY FILTER CHAIN =================
+    // ================= SECURITY FILTER CHAIN =================
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-                // ✅ ENABLE CORS (IMPORTANT)
                 .cors(cors -> {})
-
-                // ❌ disable CSRF for REST APIs
                 .csrf(csrf -> csrf.disable())
 
-                // ✅ AUTHORIZE REQUESTS
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // 🔥 FIX PRE-FLIGHT
+                        // ✅ Allow WebSocket handshake and SockJS info endpoints
+                        .requestMatchers("/uploads/**").permitAll()
+                        .requestMatchers("/ws-chat/**").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
 
-                // ✅ STATELESS JWT
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
-                // ✅ JWT FILTER
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

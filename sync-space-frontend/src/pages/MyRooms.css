@@ -1,318 +1,287 @@
-/* ── Page shell ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap');
+
+/* =========================
+   PAGE
+========================= */
 .rooms-page {
   min-height: 100vh;
-  width: 100%;
-  padding: 32px 40px;
-  box-sizing: border-box;
-  background-color: #f0f2ff;
+  background: #0e0e11;
   background-image:
-    linear-gradient(30deg,  #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(30deg,  #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(150deg, #e0e7ff 12%, transparent 12.5%, transparent 87%, #e0e7ff 87.5%, #e0e7ff),
-    linear-gradient(60deg,  #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db),
-    linear-gradient(60deg,  #d1d5db 25%, transparent 25.5%, transparent 75%, #d1d5db 75.5%, #d1d5db);
-  background-size: 80px 140px;
+    radial-gradient(ellipse 60% 40% at 20% 10%, rgba(124,111,247,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 80% 80%, rgba(110,231,183,0.07) 0%, transparent 55%);
+  padding: 48px 24px 80px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #f0f0f5;
 }
 
-.status-msg {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  font-size: 18px;
-  color: #666;
+/* =========================
+   CONTAINER
+========================= */
+.rooms-container {
+  max-width: 1020px;
+  margin: 0 auto;
 }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-.dashboard-header {
+/* =========================
+   HEADER ROW
+========================= */
+.rooms-header {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid rgba(106,0,255,0.15);
+  margin-bottom: 40px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .rooms-title {
-  color: #6a00ff;
+  font-family: 'Syne', system-ui, sans-serif;
   font-size: 2.4rem;
   font-weight: 700;
+  color: #f0f0f5;
   margin: 0;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 12px;
+.rooms-title span {
+  background: linear-gradient(135deg, #7c6ff7, #6ee7b7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.action-btn {
-  background: #fff;
-  color: #444;
-  border: 1.5px solid #ddd;
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.action-btn:hover { background: #f4f4f4; border-color: #bbb; }
-.action-btn.active { background: #6a00ff; color: #fff; border-color: #6a00ff; }
-
-/* ── Dropdown panel ──────────────────────────────────────────────────────── */
-.dropdown-container {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.4s ease-in-out;
-  margin-bottom: 0;
-}
-.dropdown-container.open {
-  max-height: 320px;
-  margin-bottom: 28px;
-}
-
-.action-form {
-  background: #fff;
-  border: 1.5px solid #e0e0f0;
-  border-radius: 14px;
-  padding: 24px 28px;
-  box-shadow: 0 4px 16px rgba(106,0,255,0.07);
-}
-.action-form h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
-  color: #333;
-  font-weight: 700;
-}
-
-.input-group {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.input-group input {
-  flex: 1;
-  min-width: 160px;
-  padding: 11px 14px;
-  border: 1.5px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.input-group input:focus { border-color: #6a00ff; }
-
-.submit-btn {
-  background: #6a00ff;
-  color: #fff;
-  border: none;
-  padding: 11px 22px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 14px;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-.submit-btn:hover { background: #5500cc; }
-
-/* Created Room success panel */
-.created-room-panel { text-align: center; }
-.created-room-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.created-room-header h3 { margin: 0; font-size: 18px; color: #1a1a2e; }
-.created-checkmark { font-size: 22px; }
-.created-hint { color: #666; font-size: 14px; margin: 0 0 16px; }
-
-.code-display {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  background: #f4f0ff;
-  border: 2px dashed #a855f7;
-  border-radius: 12px;
-  padding: 14px 24px;
-  margin-bottom: 20px;
-}
-.join-code-big {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 6px;
-  color: #6a00ff;
-  font-family: 'Courier New', monospace;
-}
-.copy-btn {
-  background: #6a00ff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
+.rooms-count {
   font-size: 13px;
-  font-weight: 700;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-.copy-btn:hover { background: #5500cc; }
-
-.created-room-actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
+  color: rgba(240,240,245,0.4);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
 }
 
-/* ── Room Grid ───────────────────────────────────────────────────────────── */
+/* =========================
+   GRID
+========================= */
 .rooms-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
 }
 
+/* =========================
+   CARD
+========================= */
 .room-card {
-  background: #fff;
+  background: #16161a;
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: 20px;
   padding: 28px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: transform 0.2s, box-shadow 0.2s;
-  border-top: 4px solid transparent;
+  gap: 20px;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
 }
-.room-card:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,0.1); }
 
-/* Status-colored top border */
-.status-border-waiting  { border-top-color: #f59e0b; }
-.status-border-active   { border-top-color: #10b981; }
-.status-border-ended    { border-top-color: #9ca3af; }
-
-.room-info h2 { color: #1a1a2e; margin: 0 0 6px; font-size: 1.25rem; font-weight: 700; }
-.room-desc    { color: #666; font-size: 13px; margin: 0 0 12px; line-height: 1.4; }
-
-/* Admin's join code on card */
-.card-code-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: #f4f0ff;
-  border-radius: 8px;
-  padding: 6px 12px;
-  margin-bottom: 4px;
+.room-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(124,111,247,0.04), transparent 60%);
+  pointer-events: none;
 }
-.card-code {
-  font-family: 'Courier New', monospace;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 3px;
-  color: #6a00ff;
-}
-.copy-btn-small {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 0;
-  line-height: 1;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-.copy-btn-small:hover { opacity: 1; }
 
-/* ── Room footer ─────────────────────────────────────────────────────────── */
-.room-footer {
-  margin-top: 20px;
+.room-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(124,111,247,0.3);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,111,247,0.1);
+}
+
+/* =========================
+   CARD TOP
+========================= */
+.room-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.room-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(124,111,247,0.12);
+  border: 1px solid rgba(124,111,247,0.2);
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
 }
 
-/* Role badges */
+/* =========================
+   CARD INFO
+========================= */
+.room-info {
+  flex: 1;
+}
+
+.room-info h2 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f0f0f5;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.room-info p {
+  font-size: 13.5px;
+  color: rgba(240,240,245,0.45);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* =========================
+   CARD FOOTER
+========================= */
+.room-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* =========================
+   ROLE BADGE
+========================= */
 .role-badge {
   font-size: 11px;
-  font-weight: 800;
-  padding: 4px 10px;
-  border-radius: 20px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-.role-badge.admin       { background: #fee2e2; color: #dc2626; }
-.role-badge.member      { background: #e0e7ff; color: #6a00ff; }
-.role-badge.contributor { background: #fef3c7; color: #d97706; }
-
-/* Status badges */
-.status-badge {
-  font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 20px;
+  padding: 4px 12px;
+  border-radius: 999px;
   text-transform: uppercase;
-  white-space: nowrap;
+  letter-spacing: 0.06em;
 }
-.status-waiting { background: #fef3c7; color: #92400e; }
-.status-active  { background: #d1fae5; color: #065f46; }
-.status-ended   { background: #f3f4f6; color: #6b7280; }
 
-/* Action buttons on card */
-.start-button {
-  margin-left: auto;
-  background: #6a00ff;
-  color: #fff;
-  border: none;
-  padding: 9px 18px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 13px;
-  transition: background 0.2s;
-  white-space: nowrap;
+.role-badge.admin {
+  background: rgba(248,113,113,0.1);
+  color: #f87171;
+  border: 1px solid rgba(248,113,113,0.2);
 }
-.start-button:hover { background: #5500cc; }
 
+.role-badge.member {
+  background: rgba(124,111,247,0.1);
+  color: #a5b4fc;
+  border: 1px solid rgba(124,111,247,0.2);
+}
+
+.role-badge.contributor {
+  background: rgba(251,146,60,0.1);
+  color: #fb923c;
+  border: 1px solid rgba(251,146,60,0.2);
+}
+
+/* =========================
+   ENTER BUTTON
+========================= */
 .enter-button {
-  margin-left: auto;
-  background: #10b981;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #7c6ff7 0%, #5b50e8 100%);
   color: #fff;
   border: none;
-  padding: 9px 18px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 13px;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-.enter-button:hover { background: #059669; }
-
-.disabled-button {
-  margin-left: auto;
-  background: #f3f4f6;
-  color: #9ca3af;
-  border: 1.5px solid #e5e7eb;
-  padding: 9px 18px;
-  border-radius: 10px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 13px;
   font-weight: 600;
-  cursor: not-allowed;
-  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(124,111,247,0.35);
+  letter-spacing: -0.01em;
 }
 
-/* ── Empty state ─────────────────────────────────────────────────────────── */
-.empty-state {
+.enter-button::after {
+  content: '→';
+  font-size: 14px;
+  transition: transform 0.2s;
+}
+
+.enter-button:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(124,111,247,0.5);
+}
+
+.enter-button:hover::after {
+  transform: translateX(3px);
+}
+
+.enter-button:active {
+  transform: scale(0.97);
+  opacity: 1;
+}
+
+/* =========================
+   EMPTY STATE
+========================= */
+.rooms-empty {
   grid-column: 1 / -1;
   text-align: center;
-  padding: 60px 20px;
-  background: rgba(255,255,255,0.7);
-  border-radius: 16px;
-  border: 2px dashed #c4b5fd;
-  color: #888;
-  font-size: 16px;
+  padding: 80px 24px;
+  color: rgba(240,240,245,0.3);
+}
+
+.rooms-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.rooms-empty h3 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: rgba(240,240,245,0.4);
+  margin: 0 0 8px;
+}
+
+.rooms-empty p {
+  font-size: 14px;
+  color: rgba(240,240,245,0.25);
+  margin: 0;
+}
+
+/* =========================
+   STATUS DOT ON CARD
+========================= */
+.room-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.room-status-dot.active {
+  background: #6ee7b7;
+  box-shadow: 0 0 6px #6ee7b7;
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
+.room-status-dot.ended {
+  background: rgba(240,240,245,0.2);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.75); }
 }
