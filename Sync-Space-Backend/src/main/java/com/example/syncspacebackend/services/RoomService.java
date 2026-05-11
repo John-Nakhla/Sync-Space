@@ -24,41 +24,22 @@ public class RoomService {
     private final SimpMessagingTemplate messagingTemplate;
 
     private User getAuthenticatedUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new RuntimeException("User not authenticated");
-        }
-
-        Object principal = auth.getPrincipal();
-
-        if (!(principal instanceof UserPrincipal userPrincipal)) {
-            throw new RuntimeException("Invalid principal type: " + principal);
-        }
-
-        return userRepository.getReferenceById(userPrincipal.getId());
+    if (auth == null || !auth.isAuthenticated()) {
+        throw new RuntimeException("User not authenticated");
     }
 
-    public List<UserRoomResponse> getAuthenticatedUserRooms() {
+    Object principal = auth.getPrincipal();
 
-        User user = getAuthenticatedUser();
-
-        return participantRepository.findAllByUserId(user.getId()).stream()
-                .map(participant -> {
-                    Room room = participant.getRoom();
-
-                    return new UserRoomResponse(
-                            room.getId(),
-                            room.getName(),
-                            room.getDescription(),
-                            participant.getRole().name(),
-                            room.getStatus().name(),   // ✅ status
-                            room.getJoinCode()         // ✅ join code
-                    );
-                })
-                .toList();
+    if (!(principal instanceof UserPrincipal userPrincipal)) {
+        throw new RuntimeException("Invalid principal type: " + principal);
     }
 
+    // ✅ findById loads the real entity so .equals() works correctly
+    return userRepository.findById(userPrincipal.getId())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+}
     @Transactional
     public Room createRoom(String name, String description) {
         User owner = getAuthenticatedUser();
@@ -137,33 +118,31 @@ public class RoomService {
         participantRepository.save(p);
     }
 
-    @Transactional
-    public Room endRoom(Long roomId) {
-        User user = getAuthenticatedUser();
-        Room room = roomRepository.findById(roomId)
-                .orElseThrow(() -> new RuntimeException("Room not found"));
+  @Transactional
+public Room endRoom(Long roomId) {
+    User user = getAuthenticatedUser();
+    Room room = roomRepository.findById(roomId)
+            .orElseThrow(() -> new RuntimeException("Room not found"));
 
-        if (!room.getOwner().getId().equals(user.getId())) {
-            throw new RuntimeException("Unauthorized");
-        }
-
-        if (room.getStatus() == Room.RoomStatus.ENDED) {
-            return room; // already ended, avoid unnecessary update
-        }
-
-        room.setStatus(Room.RoomStatus.ENDED);
-        room.setEndedAt(LocalDateTime.now());
-        roomRepository.save(room);
-
-        // 🔥 Notify all clients in real-time
-        messagingTemplate.convertAndSend(
-                "/topic/rooms/" + roomId,
-                new RoomStatusMessage("ENDED", room.getOwner().getId())
-        );
-
-        return room;
+    if (!room.getOwner().getId().equals(user.getId())) {
+        throw new RuntimeException("Unauthorized");
     }
 
+    if (room.getStatus() == Room.RoomStatus.ENDED) {
+        return room; // already ended, avoid unnecessary update
+    }
+
+    room.setStatus(Room.RoomStatus.ENDED);
+    room.setEndedAt(LocalDateTime.now());
+    roomRepository.save(room);
+
+    messagingTemplate.convertAndSend(
+            "/topic/rooms/" + roomId,
+            new RoomStatusMessage("ENDED", room.getOwner().getId())
+    );
+
+    return room;
+}
     @Transactional
     public Room resumeRoom(Long roomId) {
         User user = getAuthenticatedUser();
@@ -210,5 +189,21 @@ public List<MemberResponse> getRoomMembers(Long roomId) {
                     participant.getUser().getUsername(),
                     participant.getRole().name()
             ))
+            .toList();
+}
+public List<UserRoomResponse> getAuthenticatedUserRooms() {
+    User user = getAuthenticatedUser();
+    return participantRepository.findAllByUserId(user.getId()).stream()
+            .map(participant -> {
+                Room room = participant.getRoom();
+                return new UserRoomResponse(
+                        room.getId(),
+                        room.getName(),
+                        room.getDescription(),
+                        participant.getRole().name(),
+                        room.getStatus().name(),
+                        room.getJoinCode()
+                );
+            })
             .toList();
 }}

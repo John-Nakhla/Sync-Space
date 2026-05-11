@@ -2,22 +2,16 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import api from '../api/api';
+import { pauseRoomAction, resumeRoomAction, fetchRoomInfo } from '../services/roomService';
+import { createWebSocketClient } from '../services/chatService'; // ✅ Added to match ChatRoom
 
 const COLORS = ['#ffffff', '#ff4757', '#ffa502', '#2ed573', '#1e90ff', '#9b59b6', '#000000'];
 const BRUSH_SIZES = [2, 4, 8, 12, 20];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SharedWhiteboard
-//
-// Props:
-//   roomId   – the room's numeric ID
-//   canDraw  – initial draw permission (host may promote viewers in real-time)
-//   username – display name shown on live pointer dots
-//   isHost   – if true, the Members panel shows Promote buttons
-//   stompClient – (optional) connected STOMP client for receiving WS events
-//                 Expected to subscribe to /topic/room/{roomId}/promotions
 // ─────────────────────────────────────────────────────────────────────────────
-const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, stompClient }) => {
+const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost }) => { // ✅ Removed stompClient prop
   const containerRef = useRef(null);
   const canvasRef    = useRef(null);
 
@@ -25,36 +19,40 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   const ydocRef         = useRef(null);
   const providerRef     = useRef(null);
   const undoManagerRef  = useRef(null);
-  const isMountedRef    = useRef(true); // ✅ FIX: Track mount state
+  const isMountedRef    = useRef(true);
 
   // UI state
-  const [connected,     setConnected]     = useState(false);
-  const [color,         setColor]         = useState(COLORS[0]);
-  const [brushSize,     setBrushSize]     = useState(BRUSH_SIZES[1]);
-  const [isEraser,      setIsEraser]      = useState(false);
-  const [paused,        setPaused]        = useState(false);
-  const [canDraw,       setCanDraw]       = useState(initialCanDraw);
-  const [awarenessUsers,setAwarenessUsers] = useState([]);
-  const [showMembers,   setShowMembers]   = useState(false);
-  const [members,       setMembers]       = useState([]);   // [{ id, username, role }]
-  const [promoted,      setPromoted]      = useState(false); // toast flag
-  const [promotedMsg,   setPromotedMsg]   = useState('');
+  const [connected,      setConnected]      = useState(false);
+  const [color,          setColor]          = useState(COLORS[0]);
+  const [brushSize,      setBrushSize]      = useState(BRUSH_SIZES[1]);
+  const [isEraser,       setIsEraser]       = useState(false);
+  
+  // ✅ FIX 1: Unified Pause State matching ChatRoom
+  const [roomStatus,     setRoomStatus]     = useState("ACTIVE");
+  const isPaused = roomStatus === "ENDED";  
+
+  const [canDraw,        setCanDraw]        = useState(initialCanDraw);
+  const [awarenessUsers, setAwarenessUsers] = useState([]);
+  const [showMembers,    setShowMembers]    = useState(false);
+  const [members,        setMembers]        = useState([]);
+  const [promoted,       setPromoted]       = useState(false);
+  const [promotedMsg,    setPromotedMsg]    = useState('');
+  const [togglingStatus, setTogglingStatus] = useState(false);
 
   // Drawing refs (always in sync via useEffect)
-  const drawing       = useRef(false);
-  const currentPath   = useRef([]);
-  const canDrawRef    = useRef(canDraw);
-  const colorRef      = useRef(color);
-  const brushSizeRef  = useRef(brushSize);
-  const isEraserRef   = useRef(isEraser);
-  const pausedRef     = useRef(paused);
+  const drawing      = useRef(false);
+  const currentPath  = useRef([]);
+  const canDrawRef   = useRef(canDraw);
+  const colorRef     = useRef(color);
+  const brushSizeRef = useRef(brushSize);
+  const isEraserRef  = useRef(isEraser);
+  const pausedRef    = useRef(isPaused); // ✅ Ref to block drawing inside callbacks
 
-  useEffect(() => { canDrawRef.current  = canDraw;   }, [canDraw]);
-  useEffect(() => { colorRef.current    = color;     }, [color]);
-  useEffect(() => { brushSizeRef.current = brushSize;}, [brushSize]);
-  useEffect(() => { isEraserRef.current = isEraser;  }, [isEraser]);
-  useEffect(() => { pausedRef.current   = paused;    }, [paused]);
-
+  useEffect(() => { canDrawRef.current   = canDraw;   }, [canDraw]);
+  useEffect(() => { colorRef.current     = color;     }, [color]);
+  useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
+  useEffect(() => { isEraserRef.current  = isEraser;  }, [isEraser]);
+useEffect(() => { pausedRef.current    = isPaused;  }, [isPaused]); // ✅ FIXED
   // ── Sync username into awareness whenever it changes ──────────────────────
   useEffect(() => {
     if (!providerRef.current || !username) return;
@@ -65,35 +63,68 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     }
   }, [username]);
 
-  // ── Update canDraw if the prop changes from the parent (initial mount) ────
+  // ── Fetch Initial Status ──────────────────────────────────────────────────
+  useEffect(() => {
+    const loadStatus = async () => {
+        try {
+            const data = await fetchRoomInfo(roomId);
+            setRoomStatus(data.status);
+            // If already ended, disconnect Yjs immediately
+            if (data.status === 'ENDED') providerRef.current?.disconnect(); 
+        } catch (err) {
+            console.error("Failed to load initial status", err);
+        }
+    };
+    loadStatus();
+  }, [roomId]);
+
+  // ── Update canDraw if the prop changes from the parent ────────────────────
   useEffect(() => { setCanDraw(initialCanDraw); }, [initialCanDraw]);
 
-  // ── Subscribe to STOMP promotion events ───────────────────────────────────
+  // ── ✅ FIX 2: Self-contained WebSocket Logic (Matches ChatRoom) ───────────
   useEffect(() => {
-    if (!stompClient || !roomId) return;
+    if (!roomId) return;
+    
+    const client = createWebSocketClient();
 
-    const sub = stompClient.subscribe(
-      `/topic/room/${roomId}/promotions`,
-      (message) => {
+    client.onConnect = () => {
+      // 1. Promotions Sub
+      client.subscribe(`/topic/room/${roomId}/promotions`, (message) => {
         const event = JSON.parse(message.body);
 
-        // Update local members list so the panel reflects new role
         setMembers(prev =>
           prev.map(m => m.id === event.userId ? { ...m, role: event.newRole } : m)
         );
 
-        // If THIS user was promoted → enable drawing + show toast
         if (event.username === username) {
           setCanDraw(true);
           setPromotedMsg("🎉 You've been promoted to contributor! You can now draw.");
           setPromoted(true);
           setTimeout(() => setPromoted(false), 5000);
         }
-      }
-    );
+      });
 
-    return () => sub.unsubscribe();
-  }, [stompClient, roomId, username]);
+      // 2. Room Status Sub (Chat Pause/Resume)
+      client.subscribe(`/topic/rooms/${roomId}`, (payload) => {
+        const data = JSON.parse(payload.body);
+        const incoming = data.status ?? data.roomStatus;
+        if (incoming) {
+          setRoomStatus(incoming);
+          
+          // Connect/Disconnect Yjs based on incoming state
+          if (incoming === 'ENDED') {
+            providerRef.current?.disconnect();
+          } else {
+            providerRef.current?.connect();
+          }
+        }
+      });
+    };
+
+    client.activate();
+
+    return () => client.deactivate();
+  }, [roomId, username]);
 
   // ── Fetch members list when panel opens ───────────────────────────────────
   useEffect(() => {
@@ -107,12 +138,12 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   const promoteUser = useCallback((userId) => {
     api.patch(`/api/rooms/${roomId}/promote/${userId}`)
       .catch(err => console.error('Promotion failed', err));
-      
-    // Optimistic update; the STOMP event will confirm and propagate
+
     setMembers(prev =>
       prev.map(m => m.id === userId ? { ...m, role: 'CONTRIBUTOR' } : m)
     );
   }, [roomId]);
+  
 
   // ── Redraw helper ─────────────────────────────────────────────────────────
   const redraw = useCallback(() => {
@@ -122,13 +153,11 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     const ctx = canvas.getContext('2d');
     const strokes = ydocRef.current.getArray('strokes');
 
-    // Offscreen canvas for compositing
     const off = document.createElement('canvas');
     off.width  = canvas.width;
     off.height = canvas.height;
     const octx = off.getContext('2d');
 
-    // Fill offscreen with the canvas background so eraser reveals background
     octx.fillStyle = '#121216';
     octx.fillRect(0, 0, off.width, off.height);
 
@@ -149,27 +178,20 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
     octx.globalCompositeOperation = 'source-over';
 
-    // Blit offscreen → visible
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0);
   }, []);
 
   // ── 1. Initialize Yjs, WebSocket, Awareness ───────────────────────────────
-  // ✅ FIX: Better WebSocket initialization with proper cleanup
   useEffect(() => {
     isMountedRef.current = true;
-    const token   = localStorage.getItem('token');
-    if (!token) {
-      console.error('❌ No auth token found. Cannot connect to whiteboard.');
-      return;
-    }
+    const token = localStorage.getItem('token');
+    if (!token) return;
 
     const myColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    // ✅ FIX: Use a timeout to prevent race conditions in StrictMode
     const initTimer = setTimeout(() => {
       if (!isMountedRef.current) return;
 
@@ -178,13 +200,13 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
           'ws://localhost:1234',
           `room-${roomId}`,
           ydoc,
-          { 
+          {
             params: { room: roomId, token },
             resyncInterval: 5000,
             maxBackoffTime: 30000,
           }
         );
-        
+
         if (!isMountedRef.current) {
           provider.disconnect();
           return;
@@ -192,28 +214,22 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
         providerRef.current = provider;
 
+        // Disconnect immediately if room was already paused on mount
+        if (pausedRef.current) {
+            provider.disconnect();
+        }
+
         provider.on('status', ({ status }) => {
-          console.log('📡 WebSocket status:', status);
-          if (isMountedRef.current) {
-            setConnected(status === 'connected');
-          }
+          if (isMountedRef.current) setConnected(status === 'connected');
         });
 
         provider.on('sync', (isSynced) => {
-          if (isSynced && isMountedRef.current) {
-            console.log('✅ Whiteboard synced');
-            redraw();
-          }
-        });
-
-        provider.on('connection-error', (error) => {
-          console.error('❌ WebSocket connection error:', error);
+          if (isSynced && isMountedRef.current) redraw();
         });
 
         const strokes = ydoc.getArray('strokes');
         undoManagerRef.current = new Y.UndoManager(strokes);
 
-        // ── Awareness: live pointers ────────────────────────────────────────
         const awareness = provider.awareness;
         awareness.setLocalStateField('user', {
           name:   username || 'Anonymous',
@@ -223,55 +239,36 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
         awareness.on('change', () => {
           if (!isMountedRef.current) return;
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-
           const users = Array.from(awareness.getStates().values())
-            .filter(state =>
-              state.user &&
-              state.user.cursor &&
-              state.user.name !== (username || 'Anonymous')
-            )
+            .filter(state => state.user && state.user.cursor && state.user.name !== (username || 'Anonymous'))
             .map(state => state.user);
-
           setAwarenessUsers(users);
         });
 
-        // ── Observe strokes array → redraw ──────────────────────────────────
         strokes.observe(redraw);
       } catch (error) {
         console.error('❌ Error initializing WebSocket:', error);
       }
-    }, 100); // Small delay for StrictMode compatibility
+    }, 100);
 
-    // ── Load persisted state from backend ─────────────────────────────────────
+    // Load persisted state from backend
     api.get(`/api/rooms/${roomId}/whiteboard/state`)
       .then(res => {
         if (!isMountedRef.current) return;
         const { snapshotData, deltaUpdates } = res.data;
         ydoc.transact(() => {
           if (snapshotData) {
-            Y.applyUpdate(
-              ydoc,
-              Uint8Array.from(atob(snapshotData), c => c.charCodeAt(0))
-            );
+            Y.applyUpdate(ydoc, Uint8Array.from(atob(snapshotData), c => c.charCodeAt(0)));
           }
           if (deltaUpdates && deltaUpdates.length > 0) {
             deltaUpdates.forEach(update => {
-              Y.applyUpdate(
-                ydoc,
-                Uint8Array.from(atob(update), c => c.charCodeAt(0))
-              );
+              Y.applyUpdate(ydoc, Uint8Array.from(atob(update), c => c.charCodeAt(0)));
             });
           }
         }, 'backend-load');
-        if (isMountedRef.current) {
-          redraw();
-        }
-      })
-      .catch(() => console.log('ℹ️ No previous whiteboard state (new room).'));
+        if (isMountedRef.current) redraw();
+      }).catch(() => {});
 
-    // ── Resize handler ────────────────────────────────────────────────────────
     const resizeCanvas = () => {
       const container = containerRef.current;
       const canvas    = canvasRef.current;
@@ -284,56 +281,49 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     window.addEventListener('resize', resizeCanvas);
     setTimeout(resizeCanvas, 100);
 
-    // ✅ FIX: Proper cleanup
     return () => {
       isMountedRef.current = false;
       clearTimeout(initTimer);
       window.removeEventListener('resize', resizeCanvas);
-      
-      const strokes = ydoc.getArray('strokes');
-      try {
-        strokes.unobserve(redraw);
-      } catch (e) {
-        console.error('Error unobserving strokes:', e);
-      }
-      
+
       if (providerRef.current) {
         try {
           providerRef.current.disconnect();
           providerRef.current.destroy();
-          console.log('✅ WebSocket provider cleaned up');
-        } catch (e) {
-          console.error('⚠️ Error destroying provider:', e);
-        }
+        } catch (e) {}
         providerRef.current = null;
       }
-      
-      try {
-        ydoc.destroy();
-      } catch (e) {
-        console.error('⚠️ Error destroying ydoc:', e);
-      }
+      try { ydoc.destroy(); } catch (e) {}
       ydocRef.current = null;
     };
-  }, [roomId]); // username intentionally excluded — handled by separate effect
+  }, [roomId]);
 
-  // ── 2. Pause / Resume ─────────────────────────────────────────────────────
-  const handlePause = () => {
-    const provider = providerRef.current;
-    if (!provider) return;
-
-    if (!paused) {
-      provider.disconnect();
-      setPaused(true);
-    } else {
-      provider.connect();
-      setPaused(false);
+  // ── ✅ FIX 3: Pause / Resume Toggle (Matches ChatRoom exactly) ───────────
+  const handleToggleStatus = async () => {
+    if (togglingStatus) return;
+    setTogglingStatus(true);
+    try {
+        if (isPaused) {
+            await resumeRoomAction(roomId);
+            setRoomStatus("ACTIVE");
+            providerRef.current?.connect();
+        } else {
+            await pauseRoomAction(roomId);
+            setRoomStatus("ENDED");
+            providerRef.current?.disconnect();
+        }
+    } catch (err) {
+        console.error("Failed to toggle room status:", err);
+        const data = await fetchRoomInfo(roomId);
+        setRoomStatus(data.status);
+        if (data.status === 'ENDED') providerRef.current?.disconnect();
+        else providerRef.current?.connect();
+    } finally {
+        setTogglingStatus(false);
     }
   };
 
   // ── 3. Mouse / Drawing logic ──────────────────────────────────────────────
-
-  // Convert mouse event → canvas coordinates (accounts for CSS scaling)
   const getPos = useCallback((e) => {
     const canvas = canvasRef.current;
     const rect   = canvas.getBoundingClientRect();
@@ -345,7 +335,6 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     };
   }, []);
 
-  // Normalize pos to 0–1 range for awareness (screen-size agnostic)
   const normalizePos = useCallback((pos) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -365,6 +354,7 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   }, [normalizePos]);
 
   const onMouseDown = useCallback((e) => {
+    // ✅ Block drawing if paused
     if (!canDrawRef.current || !ydocRef.current || pausedRef.current) return;
     drawing.current = true;
     const pos = getPos(e);
@@ -373,7 +363,9 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   }, [getPos, updateAwarenessCursor]);
 
   const onMouseMove = useCallback((e) => {
+    // ✅ Block drawing if paused
     if (pausedRef.current) return;
+    
     const pos = getPos(e);
     updateAwarenessCursor(pos);
 
@@ -381,9 +373,8 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
     currentPath.current.push(pos);
 
-    // Live draw on canvas (before Yjs commit) for immediate feedback
-    const ctx  = canvasRef.current.getContext('2d');
-    const pts  = currentPath.current;
+    const ctx = canvasRef.current.getContext('2d');
+    const pts = currentPath.current;
     if (pts.length < 2) return;
 
     ctx.beginPath();
@@ -397,7 +388,6 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     ctx.stroke();
   }, [getPos, updateAwarenessCursor]);
 
-  // ✅ FIX: Better error handling for persist
   const onMouseUp = useCallback(() => {
     if (!drawing.current || !canDrawRef.current || !ydocRef.current) return;
     drawing.current = false;
@@ -407,14 +397,6 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
       return;
     }
 
-    // ✅ FIX: Double-check permission before persisting
-    if (!canDrawRef.current) {
-      console.warn('❌ Permission denied: You do not have permission to draw');
-      currentPath.current = [];
-      return;
-    }
-
-    // Commit stroke to Yjs as a plain serializable object.
     const strokes = ydocRef.current.getArray('strokes');
     strokes.push([{
       points:   currentPath.current,
@@ -424,33 +406,12 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
     }]);
     currentPath.current = [];
 
-    // ── Persist to backend ────────────────────────────────────────────────────
-    // ✅ FIX: Better error handling with specific messages
     const stateVector = Y.encodeStateAsUpdate(ydocRef.current);
     api.post(
       `/api/rooms/${roomId}/whiteboard/update`,
       stateVector,
-      { 
-        headers: { 'Content-Type': 'application/octet-stream' },
-        timeout: 5000, // 5 second timeout
-      }
-    )
-      .then(() => {
-        console.log('✅ Whiteboard update persisted successfully');
-      })
-      .catch(err => {
-        if (err.response?.status === 403) {
-          console.error('❌ 403 Forbidden: You do not have permission to update this whiteboard.');
-          console.error('   Reason: Your role may not have been promoted to CONTRIBUTOR yet.');
-          console.error('   Action: Ask the room admin to promote you in the Members panel.');
-        } else if (err.response?.status === 401) {
-          console.error('❌ 401 Unauthorized: Your session may have expired. Please refresh the page.');
-        } else if (err.response?.status === 404) {
-          console.error('❌ 404 Not Found: The whiteboard endpoint is not available.');
-        } else {
-          console.error('❌ Failed to persist whiteboard update:', err.message);
-        }
-      });
+      { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 5000 }
+    ).catch(err => console.error('Failed to persist update', err));
   }, [roomId]);
 
   const onMouseLeave = useCallback(() => {
@@ -459,7 +420,6 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
   }, [onMouseUp, updateAwarenessCursor]);
 
   // ── 4. Render ─────────────────────────────────────────────────────────────
-
   return (
     <div style={styles.wrapper} ref={containerRef}>
       <div style={styles.toolbar}>
@@ -469,15 +429,16 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
           </span>
         </div>
 
-        {!canDraw && (
+        {!canDraw && !isPaused && (
           <div style={styles.viewOnlyBanner}>
             👁️ View-only mode. Ask the host to promote you.
           </div>
         )}
 
-        {paused && (
+        {/* ✅ Updated Paused Banner */}
+        {isPaused && (
           <div style={styles.pausedBanner}>
-            ⏸️ Paused — changes won't sync
+            ⏸️ Whiteboard Paused — changes won't sync
           </div>
         )}
 
@@ -488,11 +449,14 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
                 {COLORS.map(c => (
                   <button
                     key={c}
+                    disabled={isPaused}
                     style={{
                       ...styles.colorBtn,
                       backgroundColor: c,
                       border: color === c ? '2px solid #fff' : '1px solid #666',
                       transform: color === c ? 'scale(1.15)' : 'scale(1)',
+                      opacity: isPaused ? 0.5 : 1,
+                      cursor: isPaused ? 'not-allowed' : 'pointer'
                     }}
                     onClick={() => setColor(c)}
                     title={c}
@@ -504,21 +468,23 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
               <select
                 value={brushSize}
+                disabled={isPaused}
                 onChange={(e) => setBrushSize(Number(e.target.value))}
-                style={styles.select}
+                style={{...styles.select, opacity: isPaused ? 0.5 : 1}}
               >
                 {BRUSH_SIZES.map(s => (
-                  <option key={s} value={s}>
-                    ✏️ {s}px
-                  </option>
+                  <option key={s} value={s}>✏️ {s}px</option>
                 ))}
               </select>
 
               <button
+                disabled={isPaused}
                 style={{
                   ...styles.toolBtn,
                   backgroundColor: isEraser ? '#ff4757' : 'transparent',
                   color: isEraser ? '#fff' : '#a4b0be',
+                  opacity: isPaused ? 0.5 : 1,
+                  cursor: isPaused ? 'not-allowed' : 'pointer'
                 }}
                 onClick={() => setIsEraser(!isEraser)}
                 title="Eraser"
@@ -527,15 +493,15 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
               </button>
 
               <button
+                disabled={isPaused}
                 style={{
                   ...styles.toolBtn,
-                  backgroundColor: undoManagerRef.current ? '#3f3f4e' : '#2a2a2f',
-                  cursor: undoManagerRef.current ? 'pointer' : 'default',
+                  backgroundColor: undoManagerRef.current && !isPaused ? '#3f3f4e' : '#2a2a2f',
+                  cursor: undoManagerRef.current && !isPaused ? 'pointer' : 'not-allowed',
+                  opacity: isPaused ? 0.5 : 1
                 }}
                 onClick={() => {
-                  if (undoManagerRef.current) {
-                    undoManagerRef.current.undo();
-                  }
+                  if (undoManagerRef.current && !isPaused) undoManagerRef.current.undo();
                 }}
                 title="Undo (Ctrl+Z)"
               >
@@ -545,9 +511,10 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
               <div style={styles.divider} />
 
               <button
-                style={styles.clearBtn}
+                disabled={isPaused}
+                style={{...styles.clearBtn, opacity: isPaused ? 0.5 : 1, cursor: isPaused ? 'not-allowed' : 'pointer'}}
                 onClick={() => {
-                  if (ydocRef.current && window.confirm('Clear entire whiteboard?')) {
+                  if (ydocRef.current && !isPaused && window.confirm('Clear entire whiteboard?')) {
                     const strokes = ydocRef.current.getArray('strokes');
                     strokes.delete(0, strokes.length);
                   }
@@ -560,9 +527,12 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
 
           <div style={styles.divider} />
 
-          <button style={styles.pauseBtn} onClick={handlePause}>
-            {paused ? '▶️ Resume' : '⏸️ Pause'}
-          </button>
+          {/* ✅ Updated Admin Toggle Button */}
+          {isHost && (
+            <button style={styles.pauseBtn} onClick={handleToggleStatus} disabled={togglingStatus}>
+              {togglingStatus ? '...' : isPaused ? '▶️ Resume' : '⏸️ Pause'}
+            </button>
+          )}
 
           <button
             style={styles.membersBtn}
@@ -593,12 +563,7 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
           <div style={styles.membersPanel}>
             <div style={styles.membersPanelHeader}>
               <span>👥 Members ({members.length})</span>
-              <button
-                style={styles.closeBtn}
-                onClick={() => setShowMembers(false)}
-              >
-                ✕
-              </button>
+              <button style={styles.closeBtn} onClick={() => setShowMembers(false)}>✕</button>
             </div>
             {members.map(m => (
               <div key={m.id} style={styles.memberRow}>
@@ -608,10 +573,7 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
                   <span style={styles.memberRole}>{m.role}</span>
                 </div>
                 {isHost && m.role === 'MEMBER' && (
-                  <button
-                    style={styles.promoteBtn}
-                    onClick={() => promoteUser(m.id)}
-                  >
+                  <button style={styles.promoteBtn} onClick={() => promoteUser(m.id)}>
                     Promote
                   </button>
                 )}
@@ -620,17 +582,21 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
           </div>
         )}
 
-        {paused && (
+        {/* ✅ Updated Pause Overlay UI */}
+        {isPaused && (
           <div style={styles.pauseOverlay}>
             <div style={styles.pauseOverlayInner}>
               <h2>⏸️ Paused</h2>
-              <p>Edits won't sync while paused</p>
-              <button
-                style={styles.resumeOverlayBtn}
-                onClick={handlePause}
-              >
-                Resume
-              </button>
+              <p>The room has been paused by the admin</p>
+              {isHost && (
+                <button
+                  style={styles.resumeOverlayBtn}
+                  onClick={handleToggleStatus}
+                  disabled={togglingStatus}
+                >
+                  {togglingStatus ? '...' : '▶ Resume Session'}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -641,31 +607,17 @@ const SharedWhiteboard = ({ roomId, canDraw: initialCanDraw, username, isHost, s
           const y = user.cursor.y * 100;
           return (
             <div key={idx} style={{
-              position: 'absolute',
-              left: `${x}%`,
-              top: `${y}%`,
-              transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none',
-              zIndex: 10,
+              position: 'absolute', left: `${x}%`, top: `${y}%`,
+              transform: 'translate(-50%, -50%)', pointerEvents: 'none', zIndex: 10,
             }}>
               <div style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                backgroundColor: user.color,
-                border: '2px solid #fff',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                width: 12, height: 12, borderRadius: '50%', backgroundColor: user.color,
+                border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
               }} />
               <div style={{
-                backgroundColor: user.color,
-                color: '#fff',
-                padding: '2px 6px',
-                borderRadius: 4,
-                fontSize: 10,
-                fontWeight: 'bold',
-                marginTop: 4,
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                backgroundColor: user.color, color: '#fff', padding: '2px 6px',
+                borderRadius: 4, fontSize: 10, fontWeight: 'bold', marginTop: 4,
+                whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
               }}>
                 {user.name}
               </div>
@@ -797,20 +749,19 @@ const styles = {
     width:      '100%',
     height:     '100%',
   },
-  // Members panel
   membersPanel: {
-    position:    'absolute',
-    top:         60,
-    left:        20,
-    background:  '#2b2b36',
-    border:      '1px solid #3f3f4e',
+    position:     'absolute',
+    top:          60,
+    left:         20,
+    background:   '#2b2b36',
+    border:       '1px solid #3f3f4e',
     borderRadius: '12px',
-    padding:     '16px',
-    zIndex:      100,
-    minWidth:    280,
-    maxHeight:   400,
-    overflowY:   'auto',
-    boxShadow:   '0 8px 24px rgba(0,0,0,0.4)',
+    padding:      '16px',
+    zIndex:       100,
+    minWidth:     280,
+    maxHeight:    400,
+    overflowY:    'auto',
+    boxShadow:    '0 8px 24px rgba(0,0,0,0.4)',
   },
   membersPanelHeader: {
     display:        'flex',
@@ -821,12 +772,12 @@ const styles = {
     fontSize:       14,
   },
   closeBtn: {
-    background:   'transparent',
-    border:       'none',
-    color:        '#a4b0be',
-    cursor:       'pointer',
-    fontSize:     16,
-    padding:      '2px 6px',
+    background: 'transparent',
+    border:     'none',
+    color:      '#a4b0be',
+    cursor:     'pointer',
+    fontSize:   16,
+    padding:    '2px 6px',
   },
   memberRow: {
     display:        'flex',
@@ -865,7 +816,6 @@ const styles = {
     fontSize:     12,
     fontWeight:   600,
   },
-  // Pause overlay
   pauseOverlay: {
     position:       'absolute',
     inset:          0,
@@ -891,17 +841,16 @@ const styles = {
     fontWeight:   700,
     fontSize:     15,
   },
-  // Promotion toast
   promotionToast: {
-    background:     '#2ed573',
-    color:          '#121216',
-    padding:        '12px 20px',
-    fontSize:       14,
-    fontWeight:     600,
-    textAlign:      'center',
-    flexShrink:     0,
-    animation:      'none',
-    borderBottom:   '1px solid #3f3f4e',
+    background:   '#2ed573',
+    color:        '#121216',
+    padding:      '12px 20px',
+    fontSize:     14,
+    fontWeight:   600,
+    textAlign:    'center',
+    flexShrink:   0,
+    animation:    'none',
+    borderBottom: '1px solid #3f3f4e',
   },
 };
 
