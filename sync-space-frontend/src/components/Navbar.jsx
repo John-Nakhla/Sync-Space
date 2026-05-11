@@ -177,11 +177,10 @@ function Navbar() {
         <Link to="/" className="syncspace-logo">SyncSpace</Link>
 
         <div className="nav-links">
-          <Link to="/" className="nav-link">Home</Link>
-
           {!token ? (
             <>
               <div className="nav-divider" />
+              <Link to="/" className="nav-link">Home</Link>
               <Link to="/login" className="nav-link">Login</Link>
               <Link to="/signup" className="nav-link">Sign up</Link>
             </>
