@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import api from '../api/api';
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
@@ -204,7 +205,7 @@ const CloseIcon = () => (
   </svg>
 );
 
-const ChatInput = ({ onSendMessage }) => {
+const ChatInput = ({ onSendMessage , disabled ,replyTo,onCancelReply}) => {
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -229,15 +230,11 @@ const ChatInput = ({ onSendMessage }) => {
   const uploadFile = async (f) => {
     const formData = new FormData();
     formData.append('file', f);
-    const token = localStorage.getItem('token');
-    const res = await axios.post('http://localhost:8080/api/files/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        Authorization: `Bearer ${token}`,
-      },
+    const res = await api.post('/api/files/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
     });
     return res.data.fileUrl;
-  };
+};
 
   const handleSend = async () => {
     if (!text.trim() && !file) return;
@@ -284,6 +281,22 @@ const ChatInput = ({ onSendMessage }) => {
           onDrop={handleDrop}
         >
           <div className="chat-input-area">
+            
+            {/* Reply preview strip */}
+            {replyTo && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'rgba(91,91,214,0.08)', border: '1px solid rgba(91,91,214,0.2)',
+                borderRadius: '8px', padding: '6px 10px', fontSize: '12px', color: '#9898e8'
+              }}>
+                <span>↩ Replying to <strong>{replyTo.sender}</strong>: {replyTo.content?.slice(0, 50)}{replyTo.content?.length > 50 ? '...' : ''}</span>
+                <button onClick={onCancelReply} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#6060b0', fontSize: '14px', padding: '0 0 0 8px'
+                }}>✕</button>
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               className="chat-text-input"

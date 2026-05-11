@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom'; // 1. Import useNavigate
+import api from '../api/api';
+import { useNavigate } from 'react-router-dom';
 import './MyRooms.css';
 
 const MyRooms = () => {
@@ -8,21 +8,12 @@ const MyRooms = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     
-    const navigate = useNavigate(); // 2. Initialize navigate
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchRooms = async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) {
-                    setError("Please log in to view your rooms.");
-                    setLoading(false);
-                    return;
-                }
-
-                const response = await axios.get('http://localhost:8080/api/rooms/my-rooms', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const response = await api.get('/api/rooms/my-rooms');
                 setRooms(response.data);
             } catch (err) {
                 setError("Failed to load rooms.");
@@ -33,9 +24,8 @@ const MyRooms = () => {
         fetchRooms();
     }, []);
 
-    // 3. Create the navigation handler
     const handleEnterRoom = (roomId) => {
-        navigate(`/chat/${roomId}`); // Matches the route pattern you'll set in App.js
+        navigate(`/chat/${roomId}`);
     };
 
     if (loading) return <div className="status-msg">Loading your spaces...</div>;
@@ -58,7 +48,6 @@ const MyRooms = () => {
                                 <span className={`role-badge ${room.role.toLowerCase()}`}>
                                     {room.role}
                                 </span>
-                                {/* 4. Add the onClick event */}
                                 <button 
                                     className="enter-button" 
                                     onClick={() => handleEnterRoom(room.roomId)}

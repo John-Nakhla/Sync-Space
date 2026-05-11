@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import api from '../api/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     fetchInitialHistory,
@@ -132,15 +133,11 @@ const ChatRoom = () => {
         if (loadingOlder || !hasMore || messages.length === 0) return;
         setLoadingOlder(true);
         const oldest = messages[0];
-        const token = localStorage.getItem("token");
         try {
-            const res = await axios.get(
-                `http://localhost:8080/api/chat/history/${roomId}/more`,
-                {
-                    params: { before: oldest.createdAt, size: 20 },
-                    headers: { Authorization: `Bearer ${token}` }
-                }
-            );
+            // 2. api instead of axios, drop manual header and base URL
+            const res = await api.get(`/api/chat/history/${roomId}/more`, {
+                params: { before: oldest.createdAt, size: 20 }
+            });
             const older = res.data;
             if (older.length === 0) { setHasMore(false); return; }
             setMessages(prev => {
@@ -208,11 +205,11 @@ const ChatRoom = () => {
         <div className="chat-container">
 
             <header className="chat-header">
-                <button  className="back-button" onClick={() => navigate('/my-rooms')}>Back</button>
+                <button className="back-button" onClick={() => navigate('/my-rooms')}>Back</button>
 
                 <div className="chat-header-info">
                     <h2 className="chat-header-name">
-                         <span className="room_number">{roomName}</span>
+                        <span className="room_number">{roomName}</span>
                     </h2>
                     <p className="chat-header-status">
                         {isPaused ? "Paused" : "Active"}
@@ -267,6 +264,8 @@ const ChatRoom = () => {
                 <ChatInput
                     onSendMessage={handlePublish}
                     disabled={isPaused}
+                    replyTo={replyTo}
+                    onCancelReply={() => setReplyTo(null)}
                 />
             </footer>
 
