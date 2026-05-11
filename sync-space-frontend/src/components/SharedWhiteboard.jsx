@@ -1,29 +1,26 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { jwtDecode } from 'jwt-decode';
 import api from '../api/api';
 
 const COLORS = ['#ffffff', '#ff4757', '#ffa502', '#2ed573', '#1e90ff', '#9b59b6'];
 const BRUSH_SIZES = [2, 4, 8, 12, 20];
 
-const SharedWhiteboard = ({ roomId, canDraw }) => {
+// ✅ ACCEPT the new username prop
+const SharedWhiteboard = ({ roomId, canDraw, username }) => {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   
-  // Yjs Refs
   const ydocRef = useRef(null);
   const providerRef = useRef(null);
   const undoManagerRef = useRef(null);
   
-  // State
   const [connected, setConnected] = useState(false);
   const [color, setColor] = useState(COLORS[0]);
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
   const [isEraser, setIsEraser] = useState(false);
   const [awarenessUsers, setAwarenessUsers] = useState([]);
   
-  // Drawing Refs
   const drawing = useRef(false);
   const currentPath = useRef([]);
   const canDrawRef = useRef(canDraw);
@@ -31,24 +28,32 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
   const brushSizeRef = useRef(brushSize);
   const isEraserRef = useRef(isEraser);
 
-  // Sync refs so event listeners always have the latest state
   useEffect(() => { canDrawRef.current = canDraw; }, [canDraw]);
   useEffect(() => { colorRef.current = color; }, [color]);
   useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
   useEffect(() => { isEraserRef.current = isEraser; }, [isEraser]);
 
-  // ── 1. Initialize Yjs, WebSocket, and Awareness ───────────────────────────
+  // ✅ Keep awareness in sync with the username prop
+  useEffect(() => {
+    if (providerRef.current && username) {
+      const awareness = providerRef.current.awareness;
+      const localState = awareness.getLocalState();
+      if (localState?.user) {
+        awareness.setLocalStateField('user', {
+          ...localState.user,
+          name: username
+        });
+      }
+    }
+  }, [username]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const decoded = token ? jwtDecode(token) : null;
-    const username = decoded?.sub || 'Anonymous'; // Adjust based on your token payload
     const myColor = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    // Create Yjs Doc
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    // Create WebSocket Provider
     const provider = new WebsocketProvider(
       'ws://localhost:1234',
       `room-${roomId}`,
@@ -57,30 +62,26 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
     );
     providerRef.current = provider;
 
-    // Track Connection Status
     provider.on('status', ({ status }) => setConnected(status === 'connected'));
 
-    // Set up UndoManager for strokes
     const strokes = ydoc.getArray('strokes');
     undoManagerRef.current = new Y.UndoManager(strokes);
 
-    // Set up Awareness (Live Cursors)
     const awareness = provider.awareness;
+    // ✅ Use the real username for your pointer
     awareness.setLocalStateField('user', {
-      name: username,
+      name: username || 'Anonymous',
       color: myColor,
-      cursor: null // {x, y}
+      cursor: null 
     });
 
     awareness.on('change', () => {
-      // Filter out ourselves and users who haven't moved their cursor
       const users = Array.from(awareness.getStates().values())
-        .filter(state => state.user && state.user.cursor && state.user.name !== username)
+        .filter(state => state.user && state.user.cursor && state.user.name !== (username || 'Anonymous'))
         .map(state => state.user);
       setAwarenessUsers(users);
     });
 
-    // Handle Redraw on Stroke Changes
     const redraw = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -90,7 +91,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
       strokes.toArray().forEach(stroke => {
         if (!stroke || !stroke.points || stroke.points.length < 2) return;
         ctx.beginPath();
-        // Use destination-out for eraser, source-over for regular drawing
         ctx.globalCompositeOperation = stroke.isEraser ? 'destination-out' : 'source-over';
         ctx.strokeStyle = stroke.isEraser ? 'rgba(0,0,0,1)' : stroke.color;
         ctx.lineWidth = stroke.width;
@@ -102,29 +102,31 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
         ctx.stroke();
       });
       
-      // Reset composite operation
       ctx.globalCompositeOperation = 'source-over';
     };
 
     strokes.observe(redraw);
 
-    // Optional: Load persisted state from backend
-    // Uncomment this when your backend is ready to send the Yjs binary snapshot
-    /*
-    api.get(`/api/rooms/${roomId}/whiteboard/state`, { responseType: 'arraybuffer' })
+    // Persistence: Load persisted state from backend
+    api.get(`/api/rooms/${roomId}/whiteboard/state`)
       .then(res => {
-        if (res.data && res.data.byteLength > 0) {
-          Y.applyUpdate(ydoc, new Uint8Array(res.data));
-        }
-      }).catch(err => console.error("No previous whiteboard state found."));
-    */
+        const { snapshotData, deltaUpdates } = res.data;
+        ydoc.transact(() => {
+          if (snapshotData) {
+            Y.applyUpdate(ydoc, Uint8Array.from(atob(snapshotData), c => c.charCodeAt(0)));
+          }
+          if (deltaUpdates) {
+            deltaUpdates.forEach(update => {
+              Y.applyUpdate(ydoc, Uint8Array.from(atob(update), c => c.charCodeAt(0)));
+            });
+          }
+        }, 'backend-load');
+      }).catch(err => console.error("No previous state found."));
 
-    // Resize Canvas to fit container
     const resizeCanvas = () => {
       const container = containerRef.current;
       const canvas = canvasRef.current;
       if (container && canvas) {
-        // Save current content before resize
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
@@ -133,13 +135,11 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
         canvas.width = container.clientWidth;
         canvas.height = container.clientHeight;
 
-        // Redraw content
         redraw();
       }
     };
     
     window.addEventListener('resize', resizeCanvas);
-    // Initial size
     setTimeout(resizeCanvas, 100);
 
     return () => {
@@ -148,12 +148,10 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
       provider.destroy();
       ydoc.destroy();
     };
-  }, [roomId]);
+  }, [roomId]); 
 
-  // ── 2. Mouse Handling & Drawing Logic ─────────────────────────────────────
   const getPos = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
-    // Scale correctly in case CSS width != actual canvas width
     const scaleX = canvasRef.current.width / rect.width;
     const scaleY = canvasRef.current.height / rect.height;
     return { 
@@ -184,13 +182,12 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
 
   const onMouseMove = (e) => {
     const pos = getPos(e);
-    updateAwarenessCursor(pos); // Always update cursor even if not drawing
+    updateAwarenessCursor(pos); 
 
     if (!drawing.current || !canDrawRef.current || !ydocRef.current) return;
     
     currentPath.current.push(pos);
 
-    // Draw locally immediately for zero-latency feel
     const ctx = canvasRef.current.getContext('2d');
     const pts = currentPath.current;
     if (pts.length < 2) return;
@@ -216,30 +213,24 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
       return;
     }
 
-    // Push the completed stroke to Yjs
     const strokes = ydocRef.current.getArray('strokes');
     
-    // Create a Y.Map to hold the stroke data so UndoManager can track it
     const yStroke = new Y.Map();
     yStroke.set('points', currentPath.current);
     yStroke.set('color', colorRef.current);
     yStroke.set('width', brushSizeRef.current);
     yStroke.set('isEraser', isEraserRef.current);
     
-    // We push the map as a JSON object because strokes is a simple array
     strokes.push([yStroke.toJSON()]);
     currentPath.current = [];
 
-    // Optional: Send update to Spring Boot to persist
-    /*
+    // Persistence: Save to Spring Boot
     const stateVector = Y.encodeStateAsUpdate(ydocRef.current);
     api.post(`/api/rooms/${roomId}/whiteboard/update`, stateVector, {
         headers: { 'Content-Type': 'application/octet-stream' }
     });
-    */
   };
 
-  // Hide cursor when mouse leaves canvas
   const onMouseLeave = () => {
     onMouseUp();
     if (providerRef.current) {
@@ -251,7 +242,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
     }
   };
 
-  // ── 3. Tool Actions ───────────────────────────────────────────────────────
   const handleUndo = () => {
     if (undoManagerRef.current && canDraw) {
       undoManagerRef.current.undo();
@@ -270,13 +260,9 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
     ydocRef.current.transact(() => strokes.delete(0, strokes.length));
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.wrapper}>
-      {/* ── Toolbar ── */}
       <div style={styles.toolbar}>
-        
-        {/* Status & Banner */}
         <div style={styles.toolGroup}>
           <span style={{ color: connected ? '#2ed573' : '#ffa502', fontWeight: 600, fontSize: '14px' }}>
             {connected ? '🟢 Live' : '🟡 Connecting…'}
@@ -288,10 +274,8 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
           )}
         </div>
 
-        {/* Drawing Tools (Only visible if can draw) */}
         {canDraw && (
           <div style={styles.toolGroup}>
-            {/* Color Picker */}
             <div style={styles.colorPalette}>
               {COLORS.map(c => (
                 <button
@@ -309,7 +293,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
 
             <div style={styles.divider} />
 
-            {/* Brush Size */}
             <select 
               value={brushSize} 
               onChange={(e) => setBrushSize(Number(e.target.value))}
@@ -322,7 +305,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
 
             <div style={styles.divider} />
 
-            {/* Eraser */}
             <button 
               style={{...styles.toolBtn, background: isEraser ? '#555' : 'transparent'}}
               onClick={() => setIsEraser(true)}
@@ -333,19 +315,16 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
 
             <div style={styles.divider} />
 
-            {/* Undo / Redo */}
             <button style={styles.toolBtn} onClick={handleUndo} title="Undo">↩️</button>
             <button style={styles.toolBtn} onClick={handleRedo} title="Redo">↪️</button>
 
             <div style={styles.divider} />
 
-            {/* Clear Board */}
             <button onClick={handleClear} style={styles.clearBtn}>🗑 Clear</button>
           </div>
         )}
       </div>
 
-      {/* ── Canvas Area ── */}
       <div ref={containerRef} style={styles.canvasContainer}>
         <canvas
           ref={canvasRef}
@@ -359,7 +338,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
           onMouseLeave={onMouseLeave}
         />
         
-        {/* Remote Cursors Overlay */}
         {awarenessUsers.map((user, i) => (
           <div
             key={i}
@@ -375,7 +353,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
               alignItems: 'center'
             }}
           >
-            {/* Cursor Dot */}
             <div style={{
               width: 10, height: 10, 
               borderRadius: '50%', 
@@ -383,7 +360,6 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
               border: '2px solid #fff',
               boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
             }} />
-            {/* User Name Tag */}
             <div style={{
               backgroundColor: user.color,
               color: '#fff',
@@ -404,13 +380,12 @@ const SharedWhiteboard = ({ roomId, canDraw }) => {
   );
 };
 
-// ── Dark Theme Styles ───────────────────────────────────────────────────────
 const styles = {
   wrapper: {
     display:       'flex',
     flexDirection: 'column',
     height:        '100%',
-    background:    '#1e1e24', // Dark theme matching the hub
+    background:    '#1e1e24', 
     borderRadius:  '12px',
     overflow:      'hidden',
     boxShadow:     '0 10px 30px rgba(0,0,0,0.5)',
@@ -420,7 +395,7 @@ const styles = {
     alignItems:     'center',
     justifyContent: 'space-between',
     padding:        '12px 20px',
-    background:     '#2b2b36', // Slightly lighter dark panel
+    background:     '#2b2b36', 
     borderBottom:   '1px solid #3f3f4e',
   },
   toolGroup: {
@@ -486,7 +461,7 @@ const styles = {
     overflow:   'hidden',
   },
   canvas: {
-    background: '#121216', // Very dark canvas
+    background: '#121216',
     display:    'block',
   },
 };
