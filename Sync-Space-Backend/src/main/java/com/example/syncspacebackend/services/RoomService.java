@@ -118,7 +118,7 @@ public class RoomService {
                 .id(id)
                 .room(room)
                 .user(user)
-                .role(RoomParticipant.Role.ADMIN)
+                .role(RoomParticipant.Role.MEMBER)
                 .build();
 
         participantRepository.save(participant);
