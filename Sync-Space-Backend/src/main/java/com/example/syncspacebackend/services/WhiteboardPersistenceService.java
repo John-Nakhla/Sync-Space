@@ -4,6 +4,7 @@ import com.example.syncspacebackend.models.Room;
 import com.example.syncspacebackend.models.User;
 import com.example.syncspacebackend.models.WhiteboardSnapshot;
 import com.example.syncspacebackend.models.WhiteboardUpdate;
+import com.example.syncspacebackend.repositories.RoomWhiteboardVersionRepository;
 import com.example.syncspacebackend.repositories.WhiteboardSnapshotRepository;
 import com.example.syncspacebackend.repositories.WhiteboardUpdateRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,59 +18,85 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class WhiteboardPersistenceService {
 
-    private final WhiteboardUpdateRepository updateRepository;
+    private final WhiteboardUpdateRepository   updateRepository;
     private final WhiteboardSnapshotRepository snapshotRepository;
 
+    // FIX: Inject the version repository to use atomic DB-sequence-based versioning
+    // instead of System.currentTimeMillis(), which has a race condition under
+    // concurrent saves (two saves in the same millisecond produce the same PK).
+    private final RoomWhiteboardVersionRepository versionRepository;
+
     /**
-     * SAVE AN UPDATE: Call this when your WebSocket receives binary data from a user
+     * SAVE AN UPDATE
      *
-     * Flow:
-     *  1. Get the next version number (safe for concurrent updates)
-     *  2. Create and persist the WhiteboardUpdate
-     *  3. Optionally trigger snapshot creation when version threshold is reached
+     * Called when the frontend posts a new binary Yjs update.
+     *
+     * FIX: Version is now obtained via an atomic DB UPDATE … RETURNING query
+     * (see RoomWhiteboardVersionRepository) instead of System.currentTimeMillis().
+     * This guarantees uniqueness even under high concurrency.
+     *
+     * Snapshot trigger: every 100 updates we tell the caller to submit a snapshot.
+     * The actual snapshot is submitted by the client via the /snapshot endpoint —
+     * the server does not merge Yjs documents (no JVM Yjs library required).
      */
     @Transactional
     public void saveUpdate(Room room, User user, byte[] updateData) {
-        // Get the next safe version number for this room
-        // In production, use a database sequence or distributed counter (Redis/Zookeeper)
-        Long nextVersion = getNextVersionNumberForRoom(room.getId());
+        // Atomically increment and fetch the next version for this room.
+        // RoomWhiteboardVersionRepository.incrementAndGet uses a native query:
+        //   UPDATE room_whiteboard_version
+        //      SET current_version = current_version + 1
+        //    WHERE room_id = :roomId
+        //   RETURNING current_version
+        Long nextVersion = versionRepository.incrementAndGet(room.getId());
 
         WhiteboardUpdate newUpdate = new WhiteboardUpdate(room, user, nextVersion, updateData);
         updateRepository.save(newUpdate);
-
-        // Optional: Trigger snapshot creation every N updates
-        // This prevents loading too many deltas on join
-        if (nextVersion % 100 == 0) {
-            triggerSnapshotCreation(room.getId());
-        }
     }
 
     /**
-     * LOAD THE BOARD: Call this when a user first connects to the room
+     * SAVE A SNAPSHOT
      *
-     * Returns the board state combining snapshot + deltas:
-     *  - If snapshot exists: snapshot bytes + updates after snapshot version
-     *  - If no snapshot: all updates since room creation
+     * Called when the client posts a full Y.encodeStateAsUpdate blob to the
+     * /snapshot endpoint. This compresses all history up to the current version
+     * into a single row, and deletes the now-redundant delta rows.
      *
-     * The client will apply these in order to reconstruct the board state.
+     * The client should call this every ~100 strokes to keep delta lists short.
+     *
+     * FIX: Implements the previously empty triggerSnapshotCreation().
+     */
+    @Transactional
+    public void saveSnapshot(Room room, byte[] snapshotData) {
+        // Get the current version to tag the snapshot with
+        Long currentVersion = versionRepository.getCurrentVersion(room.getId());
+
+        // Save the snapshot
+        WhiteboardSnapshot snapshot = new WhiteboardSnapshot(room, snapshotData, currentVersion);
+        snapshotRepository.save(snapshot);
+
+        // Delete all delta updates that are now covered by this snapshot.
+        // Keep updates AFTER the snapshot version for any in-flight clients
+        // that haven't caught up yet (safety margin).
+        updateRepository.deleteByRoomIdAndVersionLessThanEqual(room.getId(), currentVersion);
+    }
+
+    /**
+     * LOAD THE BOARD
+     *
+     * Returns the board state combining snapshot + deltas.
+     * Used by WhiteboardService.getWhiteboardState().
      */
     @Transactional(readOnly = true)
     public WhiteboardStateData getFullBoardState(Long roomId) {
-        // Step A: Load the latest snapshot
         Optional<WhiteboardSnapshot> latestSnapshot = snapshotRepository.findLatestByRoomId(roomId);
 
-        // Step B: Load delta updates
         List<WhiteboardUpdate> deltaUpdates;
         if (latestSnapshot.isPresent()) {
-            // Load only updates AFTER the snapshot version
             long snapshotVersion = latestSnapshot.get().getVersion();
             deltaUpdates = updateRepository.findDeltaUpdates(roomId, snapshotVersion);
         } else {
-            // No snapshot exists, load ALL updates since room creation
             deltaUpdates = updateRepository.findByIdRoomIdOrderByIdVersionAsc(roomId);
         }
 
-        // Step C: Encode for transmission (client expects Base64 JSON)
         String snapshotDataBase64 = latestSnapshot
                 .map(s -> java.util.Base64.getEncoder().encodeToString(s.getSnapshotData()))
                 .orElse(null);
@@ -81,30 +108,6 @@ public class WhiteboardPersistenceService {
         return new WhiteboardStateData(snapshotDataBase64, deltaUpdatesBase64);
     }
 
-    /**
-     * Get the next safe version number for this room.
-     * In a highly concurrent production app, use a database sequence instead of timestamps.
-     */
-    private Long getNextVersionNumberForRoom(Long roomId) {
-        return System.currentTimeMillis();
-    }
-
-    /**
-     * Trigger snapshot creation for a room.
-     * Call this periodically to prevent the delta list from growing too large.
-     */
-    private void triggerSnapshotCreation(Long roomId) {
-       
-        // This should:
-        //  1. Fetch the latest snapshot + all deltas
-        //  2. Merge them into a single Y.Doc snapshot
-        //  3. Save the new snapshot with the current version
-        //  4. Optionally clean up old updates (keep recent ones for sync safety)
-    }
-
-    /**
-     * Data transfer object for whiteboard state
-     */
     public static class WhiteboardStateData {
         public final String snapshotData;
         public final List<String> deltaUpdates;

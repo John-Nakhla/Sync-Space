@@ -31,4 +31,5 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
 
     // ✅ ADDED: Required to fetch all members inside a specific room
     List<RoomParticipant> findAllByRoomId(Long roomId);
+    List<RoomParticipant> findAllByRoom(Room room);
 }

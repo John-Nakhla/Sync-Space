@@ -11,14 +11,15 @@ const RoomHub = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
 
-  const [activeView, setActiveView] = useState(null); // null = hub/home
+  const [activeView, setActiveView] = useState(null);
   const [roomDetails, setRoomDetails] = useState({ name: '', joinCode: '' });
   const [members, setMembers] = useState([]);
   const [userRole, setUserRole] = useState('MEMBER');
   const [showCode, setShowCode] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  // State to track if the code was copied
+  // ✅ FIX 1: Add state to hold the real username
+  const [myUsername, setMyUsername] = useState('Anonymous');
   const [copied, setCopied] = useState(false);
 
   const token = localStorage.getItem('token');
@@ -27,9 +28,7 @@ const RoomHub = () => {
 
   const canDraw = userRole === 'ADMIN' || userRole === 'CONTRIBUTOR';
 
-  // ✅ UPDATED: Added background polling for live member/role updates
   useEffect(() => {
-    // 1. Initial data fetch when page loads
     const fetchInitialData = async () => {
       try {
         const [roomRes, membersRes] = await Promise.all([
@@ -41,7 +40,10 @@ const RoomHub = () => {
         setMembers(membersRes.data);
         
         const me = membersRes.data.find(m => String(m.id) === String(currentUserId));
-        if (me) setUserRole(me.role);
+        if (me) {
+            setUserRole(me.role);
+            setMyUsername(me.username); // ✅ Extract real username
+        }
         
       } catch (err) {
         console.error("ROOM HUB ERROR:", err.response || err);
@@ -52,34 +54,43 @@ const RoomHub = () => {
     
     fetchInitialData();
 
-    // 2. Background Polling: Fetch updated members every 5 seconds
     const intervalId = setInterval(async () => {
       try {
         const membersRes = await api.get(`/api/rooms/${roomId}/members`);
         setMembers(membersRes.data);
         
-        // Also update the role just in case an admin promoted you!
         const me = membersRes.data.find(m => String(m.id) === String(currentUserId));
-        if (me) setUserRole(me.role);
+        if (me) {
+            setUserRole(me.role);
+            setMyUsername(me.username); // ✅ Keep username updated
+        }
       } catch (err) {
-        // Silently ignore background errors so it doesn't disrupt the user
+        // Silently ignore background errors
       }
     }, 5000); 
 
-    // 3. Cleanup the interval when the user leaves the room
     return () => clearInterval(intervalId);
 
   }, [roomId, currentUserId]);
 
-  // Function to handle the copy action with visual feedback
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(roomDetails.joinCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+      setTimeout(() => setCopied(false), 2000); 
     } catch (err) {
       console.error("Failed to copy code: ", err);
       alert("Failed to copy. Your browser might block clipboard access.");
+    }
+  };
+
+  // ✅ FIX 2: Add handlePromote function for the Admin
+  const handlePromote = async (targetUserId) => {
+    try {
+      await api.patch(`/api/rooms/${roomId}/promote/${targetUserId}`);
+      // Polling will refresh the list automatically in 5s
+    } catch (err) {
+      console.error("Promotion failed:", err);
     }
   };
 
@@ -91,7 +102,6 @@ const RoomHub = () => {
     );
   }
 
-  // ── Full-screen views ──────────────────────────────────────────────────────
   if (activeView === 'chat') {
     return (
       <div className="rh-fullview">
@@ -109,7 +119,13 @@ const RoomHub = () => {
         <button className="rh-back-pill" onClick={() => setActiveView(null)}>
           ← Back to Room
         </button>
-        <SharedWhiteboard roomId={roomId} canDraw={canDraw} />
+        {/* ✅ FIX 3: Pass isHost and username to the whiteboard */}
+        <SharedWhiteboard 
+          roomId={roomId} 
+          canDraw={canDraw} 
+          username={myUsername} 
+          isHost={userRole === 'ADMIN'} 
+        />
       </div>
     );
   }
@@ -130,6 +146,17 @@ const RoomHub = () => {
               <div className="rh-member-info">
                 <span className="rh-member-name">{m.username}</span>
                 <span className={`rh-role-badge ${m.role.toLowerCase()}`}>{m.role}</span>
+                
+                {/* ✅ FIX 4: Add Promote Button for Admin */}
+                {userRole === 'ADMIN' && m.role === 'MEMBER' && (
+                  <button 
+                    className="rh-promote-btn" 
+                    onClick={() => handlePromote(m.id)}
+                    style={{ marginLeft: '10px', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', background: '#1e90ff', color: 'white', border: 'none', borderRadius: '4px' }}
+                  >
+                    Promote to Contributor
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -138,14 +165,11 @@ const RoomHub = () => {
     );
   }
 
-  // ── Hub landing ────────────────────────────────────────────────────────────
   return (
     <div className="rh-hub">
-      {/* Background blobs */}
       <div className="rh-blob rh-blob-1" />
       <div className="rh-blob rh-blob-2" />
 
-      {/* Header */}
       <div className="rh-hub-header">
         <button className="rh-back-pill ghost" onClick={() => navigate('/my-rooms')}>
           ← My Rooms
@@ -176,7 +200,6 @@ const RoomHub = () => {
         )}
       </div>
 
-      {/* Cards */}
       <div className="rh-cards">
         <button className="rh-card rh-card-chat" onClick={() => setActiveView('chat')}>
           <div className="rh-card-icon">💬</div>

@@ -1,7 +1,9 @@
 package com.example.syncspacebackend.controllers;
 
 import com.example.syncspacebackend.models.RoomDto;
+import com.example.syncspacebackend.models.RoomParticipant;
 import com.example.syncspacebackend.models.UserRoomResponse;
+import com.example.syncspacebackend.models.MemberResponse;
 import com.example.syncspacebackend.models.Room;
 import com.example.syncspacebackend.models.RoomRequest;
 import com.example.syncspacebackend.services.RoomService;
@@ -56,10 +58,9 @@ public class RoomController {
     public RoomDto getRoom(@PathVariable Long roomId) {
         return roomService.getRoomDto(roomId);
     }
-    
-    // ✅ ADDED: The missing endpoint React is trying to reach!
-    @GetMapping("/{roomId}/members")
-    public ResponseEntity<List<Map<String, Object>>> getRoomMembers(@PathVariable Long roomId) {
-        return ResponseEntity.ok(roomService.getRoomMembers(roomId));
-    }
+
+@GetMapping("/{roomId}/members")
+public ResponseEntity<List<MemberResponse>> getRoomMembers(@PathVariable Long roomId) {
+    return ResponseEntity.ok(roomService.getRoomMembers(roomId));
+}
 }

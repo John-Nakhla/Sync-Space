@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -193,19 +192,23 @@ public class RoomService {
     }
 
 public RoomDto getRoomDto(Long roomId) {
-        Room room = roomRepository.findById(roomId)
-                .orElseThrow(() -> new RuntimeException("Room not found"));
+    Room room = roomRepository.findById(roomId)
+            .orElseThrow(() -> new RuntimeException("Room not found"));
 
-        return RoomDto.from(room); 
-    }
-
-    public List<Map<String, Object>> getRoomMembers(Long roomId) {
-        return participantRepository.findAllByRoomId(roomId).stream()
-                .map(p -> Map.<String, Object>of(
-                        "id", p.getUser().getId(),
-                        "username", p.getUser().getUsername(),
-                        "role", p.getRole().name()
-                ))
-                .toList();
-    }
+    return RoomDto.from(room); 
 }
+
+public List<MemberResponse> getRoomMembers(Long roomId) {
+
+    Room room = roomRepository.findById(roomId)
+            .orElseThrow(() -> new RuntimeException("Room not found"));
+
+    return participantRepository.findAllByRoom(room)
+            .stream()
+            .map(participant -> new MemberResponse(
+                    participant.getUser().getId(),
+                    participant.getUser().getUsername(),
+                    participant.getRole().name()
+            ))
+            .toList();
+}}
