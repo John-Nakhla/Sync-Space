@@ -20,8 +20,8 @@ api.interceptors.response.use(
             console.error("🚨 BACKEND REJECTED REQUEST:", err.response.status, err.config.url);
             
             // 🛑 COMMENTED OUT SO IT STOPS KICKING YOU
-            // localStorage.removeItem("token");
-            // window.location.href = "/login";
+            localStorage.removeItem("token");
+            window.location.href = "/login";
         }
         return Promise.reject(err);
     }

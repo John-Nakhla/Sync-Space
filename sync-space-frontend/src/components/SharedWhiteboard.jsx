@@ -424,9 +424,9 @@ useEffect(() => { pausedRef.current    = isPaused;  }, [isPaused]); // ✅ FIXED
     <div style={styles.wrapper} ref={containerRef}>
       <div style={styles.toolbar}>
         <div style={styles.toolGroup}>
-          <span style={{ color: '#a4b0be', fontSize: 13, fontWeight: 500 }}>
+          {/* <span style={{ color: '#a4b0be', fontSize: 13, fontWeight: 500 }}>
             {connected ? '🟢 Connected' : '🔴 Offline'}
-          </span>
+          </span> */}
         </div>
 
         {!canDraw && !isPaused && (
