@@ -31,7 +31,7 @@ public class WhiteboardController {
             @PathVariable Long roomId,
             @AuthenticationPrincipal UserPrincipal principal, // ✅ FIX: Use UserPrincipal
             @RequestBody byte[] updateData) {
-        
+
         whiteboardService.saveWhiteboardUpdate(roomId, principal.getId(), updateData);
         return ResponseEntity.ok().build();
     }
