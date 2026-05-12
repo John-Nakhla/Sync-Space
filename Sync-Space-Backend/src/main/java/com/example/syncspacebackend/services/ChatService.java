@@ -1,18 +1,13 @@
 package com.example.syncspacebackend.services;
 
 import com.example.syncspacebackend.models.ChatMessage;
-import com.example.syncspacebackend.models.User;
 import com.example.syncspacebackend.repositories.ChatMessageRepository;
-import com.example.syncspacebackend.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.connection.stream.ObjectRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,7 +15,6 @@ import org.springframework.stereotype.Service;
 public class ChatService {
 
     private final ChatMessageRepository chatRepository;
-    private final SimpMessagingTemplate messagingTemplate;
     // Note: It's often safer to use String, String for Redis if you are just sending JSON
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;

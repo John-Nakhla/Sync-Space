@@ -7,7 +7,8 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class RoomStatusMessage {
-    private String status;
-    private Long ownerId;
+public class MemberResponse {
+    private Long id;
+    private String username;
+    private String role;
 }

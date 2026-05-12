@@ -17,11 +17,19 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
     // Returns the participant records (useful if you need role/status info)
     List<RoomParticipant> findAllByUserId(Long userId);
 
+    // Specific lookup by User ID and Room ID
+    Optional<RoomParticipant> findByUserIdAndRoomId(Long userId, Long roomId);
+
     Optional<RoomParticipant> findByRoomAndUser(Room room, User user);
     
     // NEW: Find participant by Room and the User's ID (Required for Promotion)
     Optional<RoomParticipant> findByRoomAndUserId(Room room, Long userId);
     
     boolean existsByRoomAndUser(Room room, User user);
+    
     boolean existsByUserIdAndRoomId(Long userId, Long roomId);
+
+    // ✅ ADDED: Required to fetch all members inside a specific room
+    List<RoomParticipant> findAllByRoomId(Long roomId);
+    List<RoomParticipant> findAllByRoom(Room room);
 }

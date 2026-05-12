@@ -16,8 +16,12 @@ api.interceptors.response.use(
     res => res,
     err => {
         if (err.response?.status === 401 || err.response?.status === 403){
-            localStorage.removeItem("token");
-            window.location.href = "/login";
+            // 🔥 Print the exact error so we can fix it!
+            console.error("🚨 BACKEND REJECTED REQUEST:", err.response.status, err.config.url);
+            
+            // 🛑 COMMENTED OUT SO IT STOPS KICKING YOU
+            // localStorage.removeItem("token");
+            // window.location.href = "/login";
         }
         return Promise.reject(err);
     }

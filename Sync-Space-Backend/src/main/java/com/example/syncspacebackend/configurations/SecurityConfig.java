@@ -27,60 +27,62 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtFilter;
 
-    // ================= PASSWORD ENCODER =================
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // ================= AUTH MANAGER =================
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
-    // ================= SECURITY FILTER CHAIN =================
-    // ================= SECURITY FILTER CHAIN =================
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-                .cors(cors -> {})
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
-
                 .authorizeHttpRequests(auth -> auth
+                        // Public Endpoints
                         .requestMatchers("/api/auth/**").permitAll()
-                        // ✅ Allow WebSocket handshake and SockJS info endpoints
                         .requestMatchers("/uploads/**").permitAll()
-                        .requestMatchers("/ws-chat/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // WebSocket Handshake (SockJS/Stomp)
+                        .requestMatchers("/ws-chat/**").permitAll()
+
+                        // ✅ Whiteboard State & Persistence
+                        // Explicitly authenticated paths for binary data
+                        .requestMatchers(HttpMethod.GET, "/api/rooms/*/whiteboard/state").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/rooms/*/whiteboard/update").authenticated()
+                        
+
+                        // ✅ Room Management & Promotion
+                        .requestMatchers(HttpMethod.GET, "/api/rooms/*/members").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/rooms/*/promote/*").authenticated()
+
                         .anyRequest().authenticated()
                 )
-
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ================= CORS CONFIG =================
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-
         CorsConfiguration config = new CorsConfiguration();
-
         config.setAllowedOrigins(List.of("http://localhost:5173"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-
         return source;
     }
 }

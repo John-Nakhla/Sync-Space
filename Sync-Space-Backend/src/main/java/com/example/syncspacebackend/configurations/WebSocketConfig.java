@@ -14,7 +14,6 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    // Inside WebSocketConfig.java
     private final ChatSecurityInterceptor chatSecurityInterceptor;
 
     @Override
@@ -22,8 +21,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // This tells Spring: "Before any message goes to the Controller, run my interceptor"
         registration.interceptors(chatSecurityInterceptor);
     }
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
+        // Enables a simple memory-based message broker to carry messages back to the client
         config.enableSimpleBroker("/topic");
         config.setApplicationDestinationPrefixes("/app");
     }

@@ -1,6 +1,5 @@
 package com.example.syncspacebackend.models;
 
-import com.example.syncspacebackend.models.Room;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -14,13 +13,16 @@ public class RoomDto {
     private Long ownerId;
     private String status;
     private String name;
+    
+    private String joinCode;
 
     public static RoomDto from(Room room) {
         return new RoomDto(
                 room.getId(),
                 room.getOwner().getId(),
                 room.getStatus().name(),
-                room.getName()
+                room.getName(),
+                room.getJoinCode() 
         );
     }
 }

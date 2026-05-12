@@ -20,45 +20,51 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain)
-            throws ServletException, IOException {
+   @Override
+protected void doFilterInternal(
+        HttpServletRequest request,
+        HttpServletResponse response,
+        FilterChain filterChain)
+        throws ServletException, IOException {
 
-        final String authHeader =
-                request.getHeader("Authorization");
+    // ── TEMPORARY DEBUG ───────────────────────────────────────────────────
+    System.out.println("=== JWT FILTER HIT ===");
+    System.out.println(">>> PATH:        " + request.getRequestURI());
+    System.out.println(">>> METHOD:      " + request.getMethod());
+    System.out.println(">>> AUTH HEADER: " + request.getHeader("Authorization"));
+    // ─────────────────────────────────────────────────────────────────────
 
-        if (authHeader == null ||
-                !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+    final String authHeader =
+            request.getHeader("Authorization");
 
-        String jwt = authHeader.substring(7);
-        String email = jwtService.extractUsername(jwt);
-
-        if (email != null &&
-                SecurityContextHolder.getContext()
-                        .getAuthentication() == null) {
-
-            UserDetails userDetails =
-                    userDetailsService.loadUserByUsername(email);
-
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities());
-
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authToken);
-            }
-        }
-
+    if (authHeader == null ||
+            !authHeader.startsWith("Bearer ")) {
         filterChain.doFilter(request, response);
+        return;
     }
-}
+
+    String jwt = authHeader.substring(7);
+    String email = jwtService.extractUsername(jwt);
+
+    if (email != null &&
+            SecurityContextHolder.getContext()
+                    .getAuthentication() == null) {
+
+        UserDetails userDetails =
+                userDetailsService.loadUserByUsername(email);
+
+        if (jwtService.isTokenValid(jwt, userDetails)) {
+
+            UsernamePasswordAuthenticationToken authToken =
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities());
+
+            SecurityContextHolder.getContext()
+                    .setAuthentication(authToken);
+        }
+    }
+
+    filterChain.doFilter(request, response);
+}}

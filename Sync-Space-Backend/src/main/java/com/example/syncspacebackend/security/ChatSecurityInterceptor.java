@@ -1,7 +1,6 @@
 package com.example.syncspacebackend.security;
 
 import com.example.syncspacebackend.models.Room;
-import com.example.syncspacebackend.models.User;
 import com.example.syncspacebackend.repositories.RoomParticipantRepository;
 import com.example.syncspacebackend.repositories.RoomRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +13,6 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
